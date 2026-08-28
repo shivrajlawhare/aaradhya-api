@@ -1,10 +1,17 @@
+import cors from 'cors';
 import express from 'express';
 import { createExpressEndpoints } from '@ts-rest/express';
+import { config } from './config.js';
 import { contract } from './contract/index.js';
 import { router } from './router.js';
 
 export const createApp = () => {
   const app = express();
+  // aaradhya-web calls this API from a different origin (Vite dev server on
+  // :5173 vs this API on :4000) — every browser request is cross-origin, so
+  // this isn't optional even in local dev. Bearer-token auth, no cookies, so
+  // no `credentials: true` needed.
+  app.use(cors({ origin: config.corsOrigins }));
   app.use(express.json());
 
   createExpressEndpoints(contract, router, app, {

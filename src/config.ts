@@ -20,4 +20,10 @@ export const config = {
   // Comma-separated, override with DNS_SERVERS if 8.8.8.8/1.1.1.1 are
   // blocked on your network.
   dnsServers: (process.env.DNS_SERVERS ?? '8.8.8.8,1.1.1.1').split(',').map((server) => server.trim()),
+  // Origins allowed to call this API cross-origin (aaradhya-web's dev server
+  // by default — Vite on 5173). Comma-separated; add a deployed frontend
+  // origin here once one exists.
+  corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim()),
 } as const;
