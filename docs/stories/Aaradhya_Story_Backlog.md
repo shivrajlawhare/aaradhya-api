@@ -190,6 +190,27 @@ Built early because every write in every later module needs it. Placed here, not
 **UI:** None (backend only).
 **Tokens:** N/A (backend only).
 **Edge cases:** Very large `oldValue`/`newValue` (e.g. a whole embedded array like `client_contacts`) — decide and document whether the log stores the full before/after array or a diff; storing the full value is the simpler v1 choice, note it as such.
+**Decisions (v1):**
+- Stores the **full** before/after value, never a diff — the story's own
+  "simpler v1 choice." `oldValue`/`newValue` are `Schema.Types.Mixed`, and
+  both are optional (a field set for the first time has no prior value).
+- `entityType`/`entityId`/`changedBy` are plain strings, not Mongoose refs —
+  `entityType` is deliberately open (not a closed enum): the set of loggable
+  entities isn't known yet, and locking it down now means guessing at
+  modules that don't exist. A compound `{ entityType: 1, entityId: 1 }`
+  index is in place for the natural "history for this entity" query
+  STORY-009 will need.
+- `timestamp` has a schema `default: Date.now` and `immutable: true` (blocks
+  mutation after creation) — but the real "not client-supplied" guarantee is
+  the write helper's input type, which has no `timestamp` field at all.
+  `immutable` doesn't stop a value being set at creation time by code that
+  bypasses the helper and calls the model directly; `logChange` is the one
+  documented path, and structurally can't accept one. Verified both halves
+  with a test.
+- Lives in `src/services/` despite touching the DB (unlike this folder's
+  other pure computation) — the story's own framing ("the shared service...")
+  and its "unit-tested directly, no HTTP layer" requirement are what that
+  folder buys either way.
 
 ### STORY-009: GET /change-log
 **Flow:** An Event Manager viewing an Event's Activity tab requests all Change Log Entries for that Event.

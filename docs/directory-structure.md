@@ -29,7 +29,7 @@ aaradhya-api/
 │   ├── router.ts                 # @ts-rest/express router wired to the contract
 │   ├── app.ts                    # builds the Express app (endpoints mounted) - imported by index.ts and by supertest
 │   ├── controllers/               # per-route handlers - owns the DB call + business logic
-│   ├── services/                 # DB-free, unit-testable logic - totals, rollups, overlap checks, token sign/verify
+│   ├── services/                 # unit-testable without an HTTP layer - totals, rollups, overlap checks, token sign/verify (DB-free) and change-log writes (touches the DB, STORY-008 - see that story's Decisions)
 │   ├── middleware/                # auth, role guard (STORY-003)
 │   ├── validations/                # request-specific Zod validation not already in the shared contract schema
 │   ├── utils/

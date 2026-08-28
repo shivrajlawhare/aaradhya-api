@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { Error as MongooseError } from 'mongoose';
 import { Role, User } from '../../src/models/user.js';
 import { clearCollections, connectTestDb, disconnectTestDb } from '../support/db.js';
+import { expectValidationError } from '../support/validation.js';
 
 const validUserData = () => ({
   name: 'Priya Nair',
@@ -9,14 +9,6 @@ const validUserData = () => ({
   passwordHash: 'argon2-hash-placeholder',
   role: Role.EventManager,
 });
-
-const expectValidationError = async (data: Record<string, unknown>) => {
-  const caught = await new User(data).validate().catch((error: unknown) => error);
-  if (!(caught instanceof MongooseError.ValidationError)) {
-    throw new Error(`expected a ValidationError, got: ${String(caught)}`);
-  }
-  return caught;
-};
 
 beforeAll(async () => {
   await connectTestDb();
@@ -48,20 +40,20 @@ describe('User model', () => {
       const data: Record<string, unknown> = { ...validUserData() };
       delete data[field];
 
-      const error = await expectValidationError(data);
+      const error = await expectValidationError(User, data);
 
       expect(error.errors).toHaveProperty(field);
     },
   );
 
   it('rejects a role outside the four allowed values', async () => {
-    const error = await expectValidationError({ ...validUserData(), role: 'Admin' });
+    const error = await expectValidationError(User, { ...validUserData(), role: 'Admin' });
 
     expect(error.errors).toHaveProperty('role');
   });
 
   it('rejects an empty-string role', async () => {
-    const error = await expectValidationError({ ...validUserData(), role: '' });
+    const error = await expectValidationError(User, { ...validUserData(), role: '' });
 
     expect(error.errors).toHaveProperty('role');
   });
