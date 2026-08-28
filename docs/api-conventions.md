@@ -40,9 +40,25 @@ request shape, not which credential was wrong.
 
 - Signed JWT, `HS256`, secret from `JWT_SECRET`. Lifetime from `JWT_EXPIRES_IN`
   (default `8h`) — a technical knob, not a product requirement (SRS FR-AUTH-4).
-- Claims: `sub` = user id, `role` = the user's Role. The STORY-003 middleware reads
-  these back into `req.user = { id, role }`.
-- Passed by the client as `Authorization: Bearer <token>` (consumed in STORY-003).
+- Claims: `sub` = user id, `role` = the user's Role at issue time.
+- Passed by the client as `Authorization: Bearer <token>` (scheme is
+  case-insensitive).
+
+### Auth middleware + role guard — SETTLED (STORY-003)
+
+- `authenticate` verifies the Bearer token, then **re-loads the user from the
+  database** and populates `req.user = { id, role }` from that row. A token is
+  only as good as the current account:
+  - missing / malformed / bad-signature / expired token → `401`
+    `{ "error": { "code": "UNAUTHENTICATED", "message": "Authentication required." } }`
+  - token valid but the account is now deleted or `active: false` → same `401`
+  - **v1 decision:** deactivation and role changes take effect on the *next*
+    request, not at token expiry. Authorization always runs against the live
+    `role`, never a stale token claim — matters for the payment/change-log
+    restriction (SRS §6.2).
+- `requireRole(...roles)` runs after `authenticate`; if `req.user.role` is not in
+  the allow-list → `403`
+  `{ "error": { "code": "FORBIDDEN", "message": "You do not have access to this resource." } }`.
 
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 

@@ -33,6 +33,7 @@ aaradhya-api/
 │   ├── middleware/                # auth, role guard (STORY-003)
 │   ├── validations/                # request-specific Zod validation not already in the shared contract schema
 │   ├── utils/
+│   ├── types/                     # ambient TS augmentation (e.g. express.d.ts adds req.user)
 │   ├── config.ts                  # env loading + required-var guard
 │   ├── db.ts                      # Mongoose connect()
 │   └── index.ts                   # startup: connect DB, then app.listen()

@@ -84,6 +84,17 @@ Referenced by short name in each story's **Tokens** line.
 
 ### STORY-003: Auth middleware + role guard
 **Flow:** Every protected request carries the token from STORY-002; middleware verifies it, attaches `req.user = {id, role}`, and a `requireRole(...roles)` guard rejects requests from the wrong role before the route handler runs.
+**Decisions (v1):**
+- **A session is invalidated as soon as the account is deactivated** (not at token
+  expiry). `authenticate` re-loads the user from the DB on every protected request:
+  a token for a now-`active: false` or deleted account returns 401, and
+  `requireRole` checks the *live* DB role, not the token's `role` claim — so a
+  demotion takes effect on the next request. Costs one indexed `_id` lookup per
+  request, negligible at ~15 users, and keeps the payment/change-log restriction
+  (SRS §6.2) from being bypassable with a stale token. Full shapes in
+  `docs/api-conventions.md`.
+- 401 code `UNAUTHENTICATED` covers missing / malformed / bad-signature / expired
+  tokens and the deactivated-account case alike; 403 code `FORBIDDEN` for role.
 **Acceptance Criteria:**
 - [ ] A request with no token to a protected test route returns 401.
 - [ ] A request with a valid token attaches `req.user` and reaches the handler.
