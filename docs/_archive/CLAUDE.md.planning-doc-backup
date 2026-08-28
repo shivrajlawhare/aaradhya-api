@@ -1,0 +1,194 @@
+# Aaradhya — Spec-Driven Dev Process, Repo Structure & Rules Encoding
+
+**Applies to:** a fresh repo — nothing scaffolded yet. Everything below is the initial setup, not a retrofit.
+**Inputs referenced:** `Aaradhya_SRS_v1.1.md` + `Spec_Amendment_MultiDate_Sessions.md` (Prompt 2), `Aaradhya_Story_Backlog.md` STORY-001–052 (Prompt 4), the theme token set from the UI Concept mockup (Prompt 3), and the two rules exports attached to this prompt.
+
+## 0. What actually carries over from the attached rules docs
+
+The two attached files are `.cursor/rules` + `docs/*` exports from **Voyager**, an unrelated GraphQL/AppSync, Lambda-resolver, module-federation micro-frontend monorepo. Aaradhya is a single REST API on MongoDB with one React/MUI frontend — a much smaller, simpler shape. Per your call, only the stack-agnostic parts are carried into the new repo; nothing GraphQL/AppSync/module-federation-specific is ported. Nothing below reproduces the rule *content* — it's referenced by file and section so you can copy the source files directly.
+
+| Voyager source | Carries to Aaradhya? | Where it lands | Note |
+|---|---|---|---|
+| `docs/git-guidelines.md` | Yes, verbatim | `docs/git-guidelines.md` (root) | Fully generic commit-message format. Copy as-is. |
+| `docs/naming-conventions.md` | Mostly | `docs/naming-conventions.md` (root) | Boolean/Date/Array/Object/File/Directory/Enum rules are generic — copy as-is. Strike the `Queries`/`Mutations` lines (GraphQL field-naming) before copying; there's no GraphQL layer to name fields for. |
+| `docs/coding-guidelines.md` — **Do's/Don'ts + TS block** | Yes, verbatim | `docs/coding-guidelines.md` (root) | Identical text in both source files — genuinely stack-agnostic TS guidance. Copy as-is. |
+| `docs/coding-guidelines.md` — **"React Specific Guidelines"** (frontend file only) | Mostly | `frontend/docs/react-guidelines.md` | Copy, but strike the Apollo/GraphQL-bound bullets: `refetchAndAwaitQueries`, "always use generated queries/mutations from `graphql-codegen`", "prefer Fragments from codegen", "use `Query` over `LazyQuery`". Everything else (arrow-function components, `handle`-prefixed event names, no bare `?.`, React Hook Form + Zod, common components in `src/components/ui`, `React.lazy`, accessibility attributes) is genuinely React-generic — keep it. |
+| `docs/general-code-patterns.md` (backend file) — **"GraphQL Resolver/API Handler"** | Yes, reinterpreted | `backend/docs/handler-patterns.md` | The actual rule ("the handler owns the business logic and the DB connection; only extract to `utils` once it's genuinely too big; avoid names like `resolve`/`get`") is a REST-controller rule wearing a GraphQL label. Copy it and read *"resolver"* as *"route handler/controller"* throughout. |
+| `docs/general-code-patterns.md` — **TypeScript Types section** (both files) | Yes, reinterpreted | shared into `docs/coding-guidelines.md` or its own `docs/typescript-rules.md` | No `any`, no `as`, no hand-rolled `is` type guards, no inline ternaries in JSX, constants over magic strings. The line "data types already defined since code is generated" — read *"through graphql-codegen"* as *"through the REST/OpenAPI codegen"* from Prompt 6; same rule, different generator. |
+| `docs/style-guide.md` | Yes, verbatim | `frontend/docs/style-guide.md` | Frontend-only, fully generic MUI v5 styling rules (`.ts` style files, no inline styles, one exported const per style). Copy as-is. |
+| `.cursor/skills/fe-review/SKILL.md` + `.cursor/skills/api-review/SKILL.md` | Yes, near-verbatim | `.claude/skills/review-standards/SKILL.md` | These two skills are already stack-agnostic (fixed-point diff + repo `docs/` + Fowler smell baseline). Merge the two into one skill — see §3. |
+| `docs/directory-structure.md` (both files) | No | — | Entirely Voyager's micro-frontend/microservice layout. Only the *principle* carries: apps/services are independent and never cross-reference by file path; shared code lives in one clearly-named shared location. Aaradhya's own layout is §1 below — written fresh, not ported. |
+| `docs/graphql-conventions.md` | No | — | Input/Response type-suffix rules, the `AppSyncResolverEvent` handler signature, the CloudWatch `console.log` pairs, the `@allmysons/schema/<name>` import convention — all GraphQL/AppSync-specific, none of it applies to a REST handler. |
+| `.cursor/rules/graphql.mdc`, `.cursor/rules/resolvers.mdc` | No | — | Glob-scoped loaders for the excluded GraphQL doc. |
+
+**One real gap, not just an exclusion:** there is no REST equivalent of `graphql-conventions.md` yet — nothing documents Aaradhya's route naming, response envelope shape, error format, or pagination convention. That's new content the team has to decide, not something to port from Voyager. Flagging it here as `docs/api-conventions.md` — **create before or alongside Prompt 6** (the REST codegen setup), since codegen needs a settled response shape to generate against.
+
+---
+
+## 1. Folder structure
+
+```
+aaradhya-event-management/
+├── .claude/
+│   ├── CLAUDE.md                       # root rules — always loaded by Claude Code
+│   └── skills/
+│       └── review-standards/
+│           └── SKILL.md                # ported fe-review + api-review, merged
+├── docs/
+│   ├── spec/
+│   │   ├── Aaradhya_SRS_v1.1.md
+│   │   └── Spec_Amendment_MultiDate_Sessions.md
+│   ├── stories/
+│   │   └── Aaradhya_Story_Backlog.md   # STORY-001–052
+│   ├── design/
+│   │   └── theme-tokens.md             # token table from the Prompt 3 mockup
+│   ├── git-guidelines.md               # ported verbatim
+│   ├── naming-conventions.md           # ported, GraphQL lines struck
+│   ├── coding-guidelines.md            # ported Do's/Don'ts + TS block
+│   ├── directory-structure.md          # this file, written fresh for Aaradhya
+│   └── api-conventions.md              # GAP — to be written before Prompt 6
+│
+├── backend/
+│   ├── CLAUDE.md                       # backend-scoped rules
+│   ├── docs/
+│   │   └── handler-patterns.md         # ported general-code-patterns.md, "resolver"→"handler"
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── src/
+│   │   ├── models/                     # Mongoose schemas — Event, Session, User, MenuItem, ChangeLogEntry
+│   │   ├── routes/                     # Express/Fastify route wiring only — no logic here
+│   │   ├── controllers/                # per-route handlers — the "resolver" equivalent; owns DB calls + business logic
+│   │   ├── services/                   # pure computation — accommodation totals, quotation rollup, calendar overlap query
+│   │   ├── middleware/                 # auth, role guard (STORY-003)
+│   │   ├── validations/                # Zod schemas per endpoint
+│   │   ├── utils/
+│   │   └── index.ts
+│   └── tests/
+│       └── (mirrors src/ structure)
+│
+├── frontend/
+│   ├── CLAUDE.md                       # frontend-scoped rules
+│   ├── docs/
+│   │   ├── react-guidelines.md         # ported "React Specific Guidelines", Apollo bullets struck
+│   │   └── style-guide.md              # ported verbatim
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── src/
+│   │   ├── components/
+│   │   │   └── ui/                     # shared/common components — check here before building a new one
+│   │   ├── pages/                      # one folder per screen from the story backlog
+│   │   ├── generated/                  # REST API types — output of the Prompt 6 codegen step, never hand-edited
+│   │   ├── theme/                      # MUI theme built from docs/design/theme-tokens.md
+│   │   ├── stores/
+│   │   └── App.tsx
+│   └── tests/
+│       └── (mirrors src/ structure)
+│
+├── package.json                        # npm workspaces root: ["backend", "frontend"]
+└── README.md
+```
+
+`backend/` and `frontend/` each carry their own `package.json`, `tsconfig.json`, and test setup, and run independently (`npm run dev --workspace=backend`, `npm run dev --workspace=frontend`) — the workspaces root exists only to let one `npm install` cover both and to make CI able to lint/test them separately. Neither app imports across the other's `src/` by file path, matching the one directory-structure principle that did carry over from Voyager. If a real cross-app need shows up later (e.g. a shared validation schema), it gets its own top-level `shared/` package rather than a path reach-through — don't pre-build that folder now; there's nothing to put in it yet.
+
+---
+
+## 2. CLAUDE.md files
+
+Claude Code loads the root `CLAUDE.md` plus the nearest `CLAUDE.md` above whatever file is being touched — so a change under `backend/src/controllers/` picks up root + `backend/CLAUDE.md` automatically, with no glob configuration needed (unlike the Cursor `.mdc` files, which had to declare `globs:`/`alwaysApply:` per rule). Each file below is intentionally short: it points at the docs that carry the actual rules rather than restating them, plus the couple of process instructions that are genuinely new to this repo.
+
+**`.claude/CLAUDE.md`** (root — always loaded):
+```md
+# Aaradhya Event Management — Root Rules
+
+Read before any change:
+@docs/coding-guidelines.md
+@docs/naming-conventions.md
+@docs/git-guidelines.md
+@docs/directory-structure.md
+
+## Spec is the source of truth
+- Full spec: docs/spec/Aaradhya_SRS_v1.1.md
+- Work is sliced into stories: docs/stories/Aaradhya_Story_Backlog.md
+- Never implement beyond what the current story's Acceptance Criteria asks for.
+  If the spec and the story conflict, or the story is ambiguous, stop and ask —
+  don't guess and don't silently expand scope.
+
+## Every change is scoped to one story
+- State the STORY-ID you're implementing at the start of the session.
+- Commits and PR titles reference it — see docs/git-guidelines.md and the
+  workflow in docs/dev-process.md for the exact format.
+```
+
+**`backend/CLAUDE.md`**:
+```md
+# Aaradhya Backend Rules
+
+Inherits the root rules. Backend-specific:
+@docs/handler-patterns.md
+@../docs/api-conventions.md
+
+## Layering
+- routes/ wires HTTP method + path to a controller. No logic here.
+- controllers/ is the handler — owns the DB call and the business logic
+  (see handler-patterns.md — read "resolver" as "route handler").
+- services/ holds pure, DB-free computation (totals, rollups, overlap
+  queries) so it's unit-testable without a running server or DB.
+- Only extract to utils/ once a pattern genuinely repeats — don't
+  pre-abstract for a single caller.
+
+## Every derived/computed field is server-computed, never client-trusted
+Per the SRS: accommodation totals, payment balance, item total_cost, and
+the quotation rollup are always recalculated server-side; a client-submitted
+value for any of them is ignored, not validated-and-accepted.
+```
+
+**`frontend/CLAUDE.md`**:
+```md
+# Aaradhya Frontend Rules
+
+Inherits the root rules. Frontend-specific:
+@docs/react-guidelines.md
+@docs/style-guide.md
+@../docs/design/theme-tokens.md
+
+## Before building a component
+Check components/ui/ first — do not build a new common control that
+already exists there.
+
+## Styling
+One .ts style file per component, exported consts, MUI v5 utilities
+over inline styles — see style-guide.md. Colors/type/spacing come from
+theme/ (built from docs/design/theme-tokens.md), never hardcoded hex
+or px values in a component.
+```
+
+---
+
+## 3. The `review-standards` skill
+
+Merge Voyager's `fe-review` and `api-review` skills — they're already identical apart from the name, and neither actually contains GraphQL-specific logic (they just point at whatever `docs/` holds). One skill, callable from either `backend/` or `frontend/` context:
+
+`.claude/skills/review-standards/SKILL.md` — same process as the source: pin a fixed point (`git diff <ref>...HEAD`), read whatever `docs/*.md` and the nearest `CLAUDE.md` document, check the diff against them, and layer the Fowler smell baseline (Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession, Repeated Switches, Shotgun Surgery, Divergent Change, Speculative Generality, Message Chains, Middle Man, Refused Bequest) as judgement calls under whatever the repo docs already settle. No content change needed beyond removing the "GraphQL/AppSync" framing from the skill's own description line, since it never actually depended on that stack. Invoke it as the standards gate between "test" and "commit" in the workflow below.
+
+---
+
+## 4. Workflow — spec-driven development loop
+
+1. **Pick the next story.** Take the next unbuilt `STORY-0NN` from `docs/stories/Aaradhya_Story_Backlog.md`, in the order the backlog already sequences them — don't jump ahead to a later story whose dependencies (an earlier schema, an earlier endpoint) aren't built yet.
+2. **Open a session and prompt with the story, not a paraphrase of it.** Paste the story's full block — title, flow, acceptance criteria, UI needed, tokens, edge cases — verbatim, plus the path to the relevant `CLAUDE.md` if Claude Code hasn't already picked it up from the working directory. Don't summarize the story from memory; the acceptance criteria are the actual spec for this unit of work, and paraphrasing is where scope drifts.
+3. **Build.** Claude Code implements against the story's acceptance criteria only. The root `CLAUDE.md` already tells it to stop and ask rather than expand scope if the story and the spec seem to disagree — if that happens, resolve it before continuing, don't let the session guess.
+4. **Test against the story's own acceptance criteria checklist.** Each unchecked box is a concrete test — write/run the test that proves it, not a vague smoke check. A story isn't done until every box in its Acceptance Criteria is genuinely verifiable, not just "looks right."
+5. **Run `review-standards` against the diff.** `/review-standards HEAD~1` (or whatever fixed point marks the start of this story's work) before committing — catches naming, layering, and smell issues while the story is still fresh, not at PR review time.
+6. **Commit, referencing the story ID.** Format stays exactly what `docs/git-guidelines.md` already specifies (action verb first, specific, under 120 characters) with the story ID appended:
+   `Add accommodation totals computation (STORY-018)`
+   Not `STORY-018: add accommodation totals` — the verb-first rule from git-guidelines.md still governs; the story ID is metadata appended, not a prefix that pushes the verb out of first position.
+7. **Open the PR titled with the story ID, and paste the story's Acceptance Criteria as the PR's checklist.** `[STORY-018] Accommodation totals computation` as the title; the body's test-plan section is literally that story's checklist from the backlog, checked off against what was actually verified in step 4 — so the PR is reviewable against the same objective bar the story was written against, not a re-derived one.
+8. **Merge, then move to the next story.** Don't batch multiple stories into one PR even when they feel related (e.g. STORY-018/019/020's schema→endpoint→UI chain for Accommodation) — each was deliberately scoped small enough to review and test alone; merging them separately is what keeps that true in practice, not just on paper.
+
+---
+
+## 5. Before this is fully load-bearing
+
+- Write `docs/api-conventions.md` (the flagged gap in §0) before or alongside Prompt 6 — route naming, response envelope, error shape, and pagination need to be settled once, not re-decided story by story.
+- Copy the source files named in §0's table into the new repo verbatim where marked "Yes" — this document organizes and points at them, it doesn't reproduce their text, so the actual copying is a manual step.
+- `docs/design/theme-tokens.md` should be the token table from the Prompt 3 mockup, re-exported as Figma variables once that file's rate limit clears, per the note already on that artifact.
