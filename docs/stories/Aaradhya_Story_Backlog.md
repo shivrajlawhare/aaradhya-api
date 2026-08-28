@@ -68,6 +68,19 @@ Referenced by short name in each story's **Tokens** line.
 **UI:** None (backend only).
 **Tokens:** N/A (backend only).
 **Edge cases:** Empty-string password; username with leading/trailing whitespace; repeated failed attempts (no lockout required for v1, but confirm this is a deliberate non-requirement, not an oversight).
+**Decisions (v1):**
+- Response/error envelope settled in `docs/api-conventions.md`: bare success body,
+  `{ error: { code, message } }` on failure.
+- Every auth failure (unknown user, wrong password, deactivated, empty password)
+  returns the identical `401 INVALID_CREDENTIALS` body. Empty-string password is
+  a failed login, **not** a 400. A structurally malformed body is still a 400.
+- Username with surrounding whitespace / different case is normalised in the
+  contract schema (`trim` + `toLowerCase`) to match the stored form from STORY-001.
+- **No brute-force protection in v1** — confirmed deliberate (small trusted internal
+  user base; not in SRS §6.2). Documented in `docs/api-conventions.md`.
+- Token: `HS256` JWT, `sub` = id, `role` claim, `JWT_EXPIRES_IN` default `8h`.
+- Password hashing uses `@node-rs/argon2` (prebuilt Argon2 — no node-gyp/Python),
+  swapped from the `argon2` package per the architecture doc §4 allowance.
 
 ### STORY-003: Auth middleware + role guard
 **Flow:** Every protected request carries the token from STORY-002; middleware verifies it, attaches `req.user = {id, role}`, and a `requireRole(...roles)` guard rejects requests from the wrong role before the route handler runs.

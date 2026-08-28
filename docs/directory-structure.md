@@ -25,13 +25,17 @@ aaradhya-api/
 ├── tsconfig.json
 ├── src/
 │   ├── models/                   # Mongoose schemas - Event, Session, User, MenuItem, ChangeLogEntry
-│   ├── router.ts                 # @ts-rest/express router wired to @aaradhya/contracts
+│   ├── contract/                  # local home for the ts-rest contract (schemas/ + routes) until @aaradhya/contracts is settled
+│   ├── router.ts                 # @ts-rest/express router wired to the contract
+│   ├── app.ts                    # builds the Express app (endpoints mounted) - imported by index.ts and by supertest
 │   ├── controllers/               # per-route handlers - owns the DB call + business logic
-│   ├── services/                 # pure, DB-free computation - totals, rollups, overlap checks
+│   ├── services/                 # DB-free, unit-testable logic - totals, rollups, overlap checks, token sign/verify
 │   ├── middleware/                # auth, role guard (STORY-003)
 │   ├── validations/                # request-specific Zod validation not already in the shared contract schema
 │   ├── utils/
-│   └── index.ts
+│   ├── config.ts                  # env loading + required-var guard
+│   ├── db.ts                      # Mongoose connect()
+│   └── index.ts                   # startup: connect DB, then app.listen()
 └── tests/                         # mirrors src/ - Vitest + supertest against the real Express app
 ```
 

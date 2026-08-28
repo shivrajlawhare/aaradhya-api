@@ -1,4 +1,4 @@
-import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mongoose';
+import { Schema, model, type HydratedDocument } from 'mongoose';
 
 /**
  * The four fixed roles from SRS §3. Stored as their string values so a document
@@ -15,7 +15,17 @@ export enum Role {
 
 export const ROLE_VALUES: Role[] = Object.values(Role);
 
-const userSchema = new Schema(
+export interface UserAttributes {
+  name: string;
+  username: string;
+  passwordHash: string;
+  role: Role;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const userSchema = new Schema<UserAttributes>(
   {
     name: { type: String, required: true, trim: true },
     // Normalised to trimmed lowercase on write, so username uniqueness is
@@ -32,7 +42,6 @@ const userSchema = new Schema(
 
 userSchema.index({ username: 1 }, { unique: true });
 
-export type UserAttributes = InferSchemaType<typeof userSchema>;
 export type UserDocument = HydratedDocument<UserAttributes>;
 
-export const User = model('User', userSchema);
+export const User = model<UserAttributes>('User', userSchema);

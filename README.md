@@ -14,12 +14,14 @@ full rationale and `.claude/CLAUDE.md` for the working rules.
 ```
 nvm use          # Node 24
 npm install
-cp .env.example .env   # then fill in MONGODB_URI
+cp .env.example .env   # then fill in MONGODB_URI and JWT_SECRET
 npm run dev
 ```
 
 `GET /health` → `200 { "status": "ok" }` once the process is up and the DB
-connection succeeds.
+connection succeeds. `POST /auth/login` with `{ username, password }` →
+`200 { token, user: { id, name, role } }`, or a uniform `401` on any bad
+credential (see `docs/api-conventions.md`).
 
 ## Scripts
 
@@ -54,5 +56,9 @@ after that) — allow extra time or pre-warm it once on a fast connection.
 - **The ts-rest contract lives in `src/contract/`**, not a shared
   `@aaradhya/contracts` package — that package's home is still an open item in
   `docs/directory-structure.md`. Import sites keep the same shape when it moves.
-- Not yet scaffolded (out of scope for this step): auth deps (`jose`, `argon2`),
-  lint/format config, `docker-compose.yml`, and the frontend.
+- **Password hashing uses `@node-rs/argon2`**, not the `argon2` package in the
+  architecture library table. `argon2` needs a node-gyp/Python build toolchain
+  that isn't guaranteed on a dev machine; `@node-rs/argon2` is the same Argon2
+  algorithm with prebuilt native binaries. The doc's §4 explicitly allows this
+  swap.
+- Not yet scaffolded: lint/format config, `docker-compose.yml`, and the frontend.
