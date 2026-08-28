@@ -7,7 +7,31 @@ export const createApp = () => {
   const app = express();
   app.use(express.json());
 
-  createExpressEndpoints(contract, router, app);
+  createExpressEndpoints(contract, router, app, {
+    // Reshape ts-rest's default (raw ZodError) 400 body into the documented
+    // { error: { code, message, details } } envelope (docs/api-conventions.md)
+    // — one place, applies to every route's request-schema validation.
+    requestValidationErrorHandler: (error, _req, res, next) => {
+      const zodError = error.body ?? error.pathParams ?? error.query ?? error.headers;
+      if (!zodError) {
+        next(error);
+        return;
+      }
+
+      const details = zodError.issues.map((issue) => ({
+        field: issue.path.join('.'),
+        message: issue.message,
+      }));
+
+      res.status(400).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request failed validation.',
+          details,
+        },
+      });
+    },
+  });
 
   return app;
 };

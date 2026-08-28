@@ -111,9 +111,13 @@ describe('POST /auth/login', () => {
     expect(response.body).toEqual(INVALID_CREDENTIALS);
   });
 
-  it('returns 400 for a structurally invalid body', async () => {
+  it('returns 400 with field details for a structurally invalid body', async () => {
     const response = await login({ username: 'priya' });
 
     expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(response.body.error.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'password' })]),
+    );
   });
 });

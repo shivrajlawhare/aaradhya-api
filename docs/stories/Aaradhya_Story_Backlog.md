@@ -127,6 +127,19 @@ Referenced by short name in each story's **Tokens** line.
 **UI:** None (backend only).
 **Tokens:** N/A (backend only).
 **Edge cases:** Creating a user with role `EventManager` itself (must be allowed — nothing in the spec caps the count at exactly 3, that's a current headcount, not a system limit); empty-string password.
+**Decisions (v1):**
+- Empty-string `password` (and `name`/`username`) is a `400 VALIDATION_ERROR`,
+  not created. Different call than STORY-002's login, on purpose: login can't
+  distinguish "empty password" from "wrong password" without leaking which
+  field was wrong, but creation has no such constraint — reject an unusable
+  credential outright rather than persist an account with one.
+- The `400` field-listing behaviour (AC 4) is generic, not endpoint-specific: a
+  new global `requestValidationErrorHandler` in `src/app.ts` reshapes every
+  route's contract-validation failure into `{ error: { code: "VALIDATION_ERROR",
+  message, details: [{ field, message }] } }`. Documented in
+  `docs/api-conventions.md`.
+- Confirmed no EventManager cap — this endpoint doesn't count existing accounts
+  by role at all.
 
 ### STORY-006: GET /users, PATCH /users/:id
 **Flow:** An Event Manager lists all User Accounts and can deactivate one or change its role.

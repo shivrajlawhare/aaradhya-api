@@ -21,10 +21,3 @@ export const loginResultSchema = z.object({
     role: z.nativeEnum(Role),
   }),
 });
-
-export const apiErrorSchema = z.object({
-  error: z.object({
-    code: z.string(),
-    message: z.string(),
-  }),
-});

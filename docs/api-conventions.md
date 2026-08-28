@@ -6,26 +6,43 @@ Voyager's `docs/graphql-conventions.md` doesn't port over (it's GraphQL/AppSync-
 are load-bearing now; the rest are still open and should be settled alongside the
 first endpoint that needs them.
 
-### Response envelope — SETTLED (STORY-002)
+### Response envelope — SETTLED (STORY-002, extended STORY-005)
 
 - **Success:** the plain resource body, no wrapper.
   `POST /auth/login` → `200 { "token": "...", "user": { "id", "name", "role" } }`.
+  `POST /users` → `201` the created User Account (no `passwordHash`).
 - **Error:** a single wrapper object, always this shape:
   ```json
-  { "error": { "code": "SCREAMING_SNAKE_CASE", "message": "Human-readable sentence." } }
+  {
+    "error": {
+      "code": "SCREAMING_SNAKE_CASE",
+      "message": "Human-readable sentence.",
+      "details": [{ "field": "password", "message": "Required" }]
+    }
+  }
   ```
   `code` is a stable machine string clients can branch on; `message` is display-ready
-  English. No `details`/`fields` array yet — add one only when an endpoint needs
-  per-field validation feedback (and document its shape here then).
+  English. `details` is **optional** — present only on `400 VALIDATION_ERROR` (one
+  entry per failing field, `field` is the dotted path into the body); every other
+  error omits it.
 
-### Error status codes — SETTLED (STORY-002)
+### Success status codes — SETTLED (STORY-005)
 
-- `400` — the request body/params fail the contract's Zod schema (missing key, wrong
-  type). Emitted by `@ts-rest/express` before the handler runs.
+- `200` — read, or a write with no natural "new resource" (e.g. login).
+- `201` — a `POST` that creates a resource; body is the created resource.
+
+### Error status codes — SETTLED (STORY-002, extended STORY-005)
+
+- `400 VALIDATION_ERROR` — the request body/params fail the contract's Zod schema
+  (missing key, wrong type, wrong enum value). A single global
+  `requestValidationErrorHandler` (`src/app.ts`) reshapes ts-rest's default raw-Zod
+  400 into the envelope above with `details` populated — every route gets this for
+  free, nothing per-route to wire.
 - `401` — authentication failed or is missing.
 - `403` — authenticated but not allowed (role guard — STORY-003).
 - `404` — addressed resource does not exist.
-- `409` — conflict with existing state (e.g. duplicate `username` — STORY-005).
+- `409` — conflict with existing state, e.g. `409 USERNAME_TAKEN` on `POST /users`
+  for a duplicate `username` (case-insensitive, per STORY-001).
 
 ### Authentication failures are uniform — SETTLED (STORY-002)
 
@@ -59,6 +76,23 @@ request shape, not which credential was wrong.
 - `requireRole(...roles)` runs after `authenticate`; if `req.user.role` is not in
   the allow-list → `403`
   `{ "error": { "code": "FORBIDDEN", "message": "You do not have access to this resource." } }`.
+
+### POST /users — SETTLED (STORY-005)
+
+- Gated by `requireRole(Role.EventManager)`; no other role may create accounts.
+  No caller (missing token) → `401`; wrong role → `403`.
+- **Empty-string `name`/`username`/`password` is a `400 VALIDATION_ERROR`**, not
+  accepted-and-created — unlike login, where an empty password is deliberately
+  routed to the same `401` as any other bad credential. Creation has no
+  no-enumeration constraint to protect, so there's no reason to accept a
+  practically-unusable password; reject it up front instead of persisting an
+  account with a credential nobody could reasonably use.
+- No cap on how many `EventManager` accounts exist. The SRS's "up to 3 concurrent
+  Event Manager accounts" (§3) is a current headcount, not a system limit —
+  nothing in this endpoint counts or restricts it.
+- The 201 body is `userResultSchema` (`src/contract/schemas/user.ts`) — the same
+  shape `GET /users`/`PATCH /users/:id` (STORY-006) will reuse, so the public
+  User Account shape is defined once.
 
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
