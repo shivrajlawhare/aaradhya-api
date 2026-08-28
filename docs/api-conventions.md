@@ -91,8 +91,32 @@ request shape, not which credential was wrong.
   Event Manager accounts" (§3) is a current headcount, not a system limit —
   nothing in this endpoint counts or restricts it.
 - The 201 body is `userResultSchema` (`src/contract/schemas/user.ts`) — the same
-  shape `GET /users`/`PATCH /users/:id` (STORY-006) will reuse, so the public
-  User Account shape is defined once.
+  shape `GET /users`/`PATCH /users/:id` (STORY-006) reuse, so the public User
+  Account shape is defined once.
+
+### GET /users, PATCH /users/:id — SETTLED (STORY-006)
+
+- Both gated by `requireRole(Role.EventManager)`, same as `POST /users`.
+- `GET /users` returns a bare array (`200 [ userResultSchema, ... ]`) — no
+  wrapper, no pagination. At Aaradhya's scale (~15 users total, an internal
+  ops tool) this list never needs paging; if that changes, revisit the
+  `Pagination — OPEN` section below rather than bolting a wrapper onto this
+  endpoint alone.
+- `PATCH /users/:id` accepts `{ active?, role? }`; either, both, or neither may
+  be present (an empty body is a harmless no-op 200, not an error).
+- Path id must look like a Mongo ObjectId (24 hex chars) — enforced at the
+  contract's `pathParams` schema, not in the handler. A malformed id is a
+  `400 VALIDATION_ERROR`; a well-formed id with no matching account is
+  `404 { "error": { "code": "USER_NOT_FOUND", ... } }`. Different failures,
+  different codes — a malformed id was never going to resolve to a real
+  account, so it isn't really a "not found."
+- **v1 decision (was flagged as open in the story): an Event Manager CAN
+  deactivate (or demote) their own account, and it takes effect immediately.**
+  No self-modification guard in the handler — `authenticate` (STORY-003)
+  already re-checks `active` and the live `role` against the database on
+  every request, so a self-deactivation just means the caller's own next
+  request gets the normal `401` anyone else's would. Nothing new to build or
+  test beyond confirming that existing mechanism covers it.
 
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 

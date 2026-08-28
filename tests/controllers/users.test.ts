@@ -29,6 +29,12 @@ const validPayload = (overrides: Record<string, unknown> = {}) => ({
 const createUserAs = (token: string, body: object) =>
   request(app).post('/users').set('Authorization', `Bearer ${token}`).send(body);
 
+const listUsersAs = (token: string) =>
+  request(app).get('/users').set('Authorization', `Bearer ${token}`);
+
+const patchUserAs = (token: string, id: string, body: object) =>
+  request(app).patch(`/users/${id}`).set('Authorization', `Bearer ${token}`).send(body);
+
 beforeAll(connectTestDb);
 afterEach(clearCollections);
 afterAll(disconnectTestDb);
@@ -163,5 +169,154 @@ describe('POST /users', () => {
 
     expect(response.status).toBe(201);
     expect(response.body.role).toBe(Role.EventManager);
+  });
+});
+
+describe('GET /users', () => {
+  it('returns 401 with no token', async () => {
+    const response = await request(app).get('/users');
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const token = await seedCaller(role);
+
+      const response = await listUsersAs(token);
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns every account without a password hash', async () => {
+    const token = await seedCaller();
+    await createUserAs(token, validPayload({ username: 'second-user' }));
+
+    const response = await listUsersAs(token);
+
+    expect(response.status).toBe(200);
+    expect(Array.isArray(response.body)).toBe(true);
+    expect(response.body).toHaveLength(2); // the caller's own account + the one just created
+    for (const account of response.body) {
+      expect(account).not.toHaveProperty('passwordHash');
+      expect(account).not.toHaveProperty('password');
+    }
+  });
+});
+
+describe('PATCH /users/:id', () => {
+  it('returns 401 with no token', async () => {
+    const token = await seedCaller();
+    const created = await createUserAs(token, validPayload());
+
+    const response = await request(app)
+      .patch(`/users/${created.body.id}`)
+      .send({ active: false });
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const managerToken = await seedCaller();
+      const created = await createUserAs(managerToken, validPayload());
+      const token = await seedCaller(role);
+
+      const response = await patchUserAs(token, created.body.id, { active: false });
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent id', async () => {
+    const token = await seedCaller();
+
+    const response = await patchUserAs(token, '507f1f77bcf86cd799439011', { active: false });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'USER_NOT_FOUND', message: 'No user account with that id.' },
+    });
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const token = await seedCaller();
+
+    const response = await patchUserAs(token, 'not-an-id', { active: false });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('toggles active independently of role', async () => {
+    const token = await seedCaller();
+    const created = await createUserAs(token, validPayload());
+
+    const response = await patchUserAs(token, created.body.id, { active: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.active).toBe(false);
+    expect(response.body.role).toBe(Role.Reception);
+  });
+
+  it('changes role independently of active', async () => {
+    const token = await seedCaller();
+    const created = await createUserAs(token, validPayload());
+
+    const response = await patchUserAs(token, created.body.id, { role: Role.FnBHead });
+
+    expect(response.status).toBe(200);
+    expect(response.body.role).toBe(Role.FnBHead);
+    expect(response.body.active).toBe(true);
+  });
+
+  it('sets both active and role in one request', async () => {
+    const token = await seedCaller();
+    const created = await createUserAs(token, validPayload());
+
+    const response = await patchUserAs(token, created.body.id, {
+      active: false,
+      role: Role.Housekeeping,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.active).toBe(false);
+    expect(response.body.role).toBe(Role.Housekeeping);
+  });
+
+  it('a subsequent GET /users reflects the update', async () => {
+    const token = await seedCaller();
+    const created = await createUserAs(token, validPayload());
+
+    await patchUserAs(token, created.body.id, { active: false, role: Role.FnBHead });
+    const listResponse = await listUsersAs(token);
+
+    const updated = listResponse.body.find(
+      (account: { id: string }) => account.id === created.body.id,
+    );
+    expect(updated).toMatchObject({ active: false, role: Role.FnBHead });
+  });
+
+  it('allows an Event Manager to deactivate their own account, effective immediately', async () => {
+    const self = await User.create({
+      name: 'Self',
+      username: 'self-manager',
+      passwordHash: 'not-used-in-these-tests',
+      role: Role.EventManager,
+    });
+    const token = await signSessionToken({ id: self.id, role: self.role });
+
+    const response = await patchUserAs(token, self.id, { active: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.active).toBe(false);
+
+    // Same token, very next request — authenticate() re-checks `active` against
+    // the database on every call (STORY-003), so there's no grace period.
+    const followUp = await listUsersAs(token);
+    expect(followUp.status).toBe(401);
   });
 });

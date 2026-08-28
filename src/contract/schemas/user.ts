@@ -15,7 +15,7 @@ export const createUserBodySchema = z.object({
 });
 
 // The public User Account shape — everything STORY-001's schema persists
-// except `passwordHash`. Reused as-is by STORY-006 (GET /users, PATCH /users/:id).
+// except `passwordHash`. Shared by createUser, listUsers, updateUser.
 export const userResultSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -24,4 +24,18 @@ export const userResultSchema = z.object({
   active: z.boolean(),
   createdAt: z.date(),
   updatedAt: z.date(),
+});
+
+// Standard 24-hex-char Mongo ObjectId shape. A malformed id is a 400
+// (VALIDATION_ERROR, caught by the global handler) — "not shaped like an id"
+// and "shaped like an id but doesn't exist" (404) are different failures.
+export const userIdParamsSchema = z.object({
+  id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid user id.'),
+});
+
+// Both fields optional and independently settable — a caller may send just
+// `active`, just `role`, or both (STORY-006 AC).
+export const updateUserBodySchema = z.object({
+  active: z.boolean().optional(),
+  role: z.nativeEnum(Role).optional(),
 });

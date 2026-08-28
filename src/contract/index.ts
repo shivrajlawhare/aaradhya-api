@@ -2,7 +2,12 @@ import { initContract } from '@ts-rest/core';
 import { z } from 'zod';
 import { apiErrorSchema } from './schemas/common.js';
 import { loginBodySchema, loginResultSchema } from './schemas/auth.js';
-import { createUserBodySchema, userResultSchema } from './schemas/user.js';
+import {
+  createUserBodySchema,
+  updateUserBodySchema,
+  userIdParamsSchema,
+  userResultSchema,
+} from './schemas/user.js';
 
 const c = initContract();
 
@@ -44,5 +49,24 @@ export const contract = c.router({
       409: apiErrorSchema,
     },
     summary: 'Create a User Account (Event Manager only)',
+  },
+  listUsers: {
+    method: 'GET',
+    path: '/users',
+    responses: {
+      200: z.array(userResultSchema),
+    },
+    summary: 'List all User Accounts (Event Manager only)',
+  },
+  updateUser: {
+    method: 'PATCH',
+    path: '/users/:id',
+    pathParams: userIdParamsSchema,
+    body: updateUserBodySchema,
+    responses: {
+      200: userResultSchema,
+      404: apiErrorSchema,
+    },
+    summary: 'Toggle active and/or change role on a User Account (Event Manager only)',
   },
 });

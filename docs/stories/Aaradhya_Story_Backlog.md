@@ -151,6 +151,16 @@ Referenced by short name in each story's **Tokens** line.
 **UI:** None (backend only).
 **Tokens:** N/A (backend only).
 **Edge cases:** An Event Manager deactivating their own account (decide and document: allowed but they lose access immediately, or blocked — this is a real product decision, flag it back to the user if not already answered).
+**Decisions (v1):**
+- Flagged back to the user as instructed; answer: **self-deactivation/demotion is
+  allowed, effective immediately.** No special-case guard — STORY-003's
+  `authenticate` already re-checks `active`/role from the database on every
+  request, so it just works. (Blocking it outright, and blocking only the
+  last active EventManager, were both considered and declined.)
+- `GET /users` returns a bare array, no pagination — not needed at this scale;
+  see `docs/api-conventions.md`'s `Pagination — OPEN` note if that changes.
+- A malformed `:id` (not 24 hex chars) is a `400`, not folded into the `404`
+  path — caught at the contract schema layer, not the handler.
 
 ### STORY-007: User Management screen UI
 **Flow:** An Event Manager opens User Management, sees the account list from STORY-006, and creates or edits accounts via a form calling STORY-005/006.
