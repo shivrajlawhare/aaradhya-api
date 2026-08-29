@@ -222,6 +222,17 @@ Built early because every write in every later module needs it. Placed here, not
 **UI:** None (backend only).
 **Tokens:** N/A (backend only).
 **Edge cases:** Requesting logs for an `entityId` that was never logged (empty array, not an error); pagination is out of scope for v1 given the data scale, but note that as a deliberate choice if the list could ever grow large within one event's lifetime.
+**Decisions (v1):**
+- No pagination, deliberately (per the edge case) — one Event's edit history
+  over its lifetime is bounded by usage, not by data scale the way a
+  cross-entity list would be. Documented in `docs/api-conventions.md`
+  alongside the note to revisit if that assumption stops holding.
+- `entityType` + `entityId` are both required query params, not optional —
+  there's no sensible "all entities" default for what's meant to be one
+  Event Page's Activity tab, and a missing one is a `400`, matching how
+  every other route's contract-level validation already works.
+- Fixtures seeded directly via STORY-008's `logChange`, exactly as
+  instructed — no Event model or Event Management story involved.
 
 ### STORY-010: Activity tab UI (reusable component)
 **Flow:** An Event Manager opens an Event's Activity sub-tab and sees a chronological list of every field change on that Event.

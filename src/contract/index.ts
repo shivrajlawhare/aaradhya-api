@@ -2,6 +2,7 @@ import { initContract } from '@ts-rest/core';
 import { z } from 'zod';
 import { apiErrorSchema } from './schemas/common.js';
 import { loginBodySchema, loginResultSchema } from './schemas/auth.js';
+import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/change-log.js';
 import {
   createUserBodySchema,
   updateUserBodySchema,
@@ -68,5 +69,14 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: 'Toggle active and/or change role on a User Account (Event Manager only)',
+  },
+  listChangeLog: {
+    method: 'GET',
+    path: '/change-log',
+    query: listChangeLogQuerySchema,
+    responses: {
+      200: z.array(changeLogEntryResultSchema),
+    },
+    summary: 'List Change Log Entries for one entity (Event Manager only)',
   },
 });

@@ -118,6 +118,20 @@ request shape, not which credential was wrong.
   request gets the normal `401` anyone else's would. Nothing new to build or
   test beyond confirming that existing mechanism covers it.
 
+### GET /change-log — SETTLED (STORY-009)
+
+- `requireRole(Role.EventManager)`, same as the other STORY-005/006/008 routes.
+- Query params `entityType` + `entityId` (both required — a `400
+  VALIDATION_ERROR` without either); returns every `ChangeLogEntry` for that
+  exact pair, sorted `timestamp` descending (newest first).
+- An entity with no logged changes returns `200 []`, not `404` — "no history
+  yet" isn't an error, and there's no per-entity resource here to be missing.
+- **No pagination — deliberate, not an oversight.** Unlike `GET /users`
+  (bounded by headcount), this list is bounded by one Event's edit history
+  over its lifetime — plausibly dozens of entries, not thousands, at
+  Aaradhya's scale (SRS §6.1). Revisit if a single event's change history
+  ever gets large enough to matter — see `Pagination — OPEN` below.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users
