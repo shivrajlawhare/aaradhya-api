@@ -261,6 +261,14 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** Two Events created in the same millisecond (id-generation must not collide under concurrent creation — test with parallel calls, not just sequential); `event_family_type` custom values (schema must accept a free-text value alongside the enum, per FR-EVT-1's "dropdown + custom").
 
+**Decisions (v1):**
+- `event_id` generation is a per-year atomic counter (`src/models/event-id-counter.ts` + `src/services/event-id.ts`), one document per calendar year keyed by the year itself, incremented via `findOneAndUpdate({...}, {$inc:{seq:1}}, {upsert:true})`. That single Mongo-level atomic operation — not a read-then-write in application code — is what actually makes concurrent creation collision-free; a unique index on `eventId` is kept as a belt-and-braces safety net, not the primary defense.
+- `eventId` is assigned in a `pre('validate')` hook, gated on `this.isNew`, so it fires once at creation and never re-mints (and never re-reserves a sequence number) on a later `.save()` of an existing Event — relevant once an update story exists, even though none does yet.
+- `status` has no schema-level default — deliberately left to STORY-012's create endpoint (its own AC already says "`status` defaults to `Tentative`"), so this schema stays usable by anything that wants to construct an Event without silently assuming that default.
+- `event_manager`'s reference check is a Mongoose async custom validator that loads the referenced User and checks `role === EventManager`; it does not check `active` — STORY-006 already decided deactivation is enforced by `authenticate` re-checking on every request, not by every place that stores a user reference re-implementing that check.
+- `created_by` has no role restriction (unlike `event_manager`) — the story only asks for the `event_manager` reference to be role-checked; who is allowed to *be* `created_by` is an authorization question STORY-012's `requireRole` guard already owns, not a schema-level concern.
+- `client_contacts[]` subdocuments keep Mongoose's default auto-generated `_id` per row (not disabled) — FR-EVT-2's add/remove/edit-row behavior needs a stable per-row identifier, and that's the natural, idiomatic Mongoose shape for it rather than something bolted on early.
+
 ### STORY-012: POST /events
 **Flow:** An Event Manager creates a new Event, choosing family type, assigning an Event Manager, and entering at least one Client Contact (Bride, Groom, and/or POC).
 **Acceptance Criteria:**
