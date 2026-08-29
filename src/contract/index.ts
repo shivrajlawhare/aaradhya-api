@@ -6,10 +6,12 @@ import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/
 import {
   accommodationResultSchema,
   createEventBodySchema,
+  documentsChecklistResultSchema,
   eventIdParamsSchema,
   eventResultSchema,
   paymentResultSchema,
   updateAccommodationBodySchema,
+  updateDocumentsChecklistBodySchema,
   updateEventBodySchema,
   updateEventPaymentBodySchema,
 } from './schemas/event.js';
@@ -150,5 +152,16 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: "Edit an Event's Payment Record (Event Manager only)",
+  },
+  updateDocumentsChecklist: {
+    method: 'PATCH',
+    path: '/events/:id/documents',
+    pathParams: eventIdParamsSchema,
+    body: updateDocumentsChecklistBodySchema,
+    responses: {
+      200: documentsChecklistResultSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Toggle items on an Event's Documents Checklist (Event Manager only)",
   },
 });

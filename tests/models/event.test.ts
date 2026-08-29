@@ -408,6 +408,44 @@ describe('Event model', () => {
     },
   );
 
+  it('defaults every documentsChecklist item to false for a brand-new Event', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+    });
+
+    expect(event.documentsChecklist).toMatchObject({
+      aadharCard: false,
+      panCard: false,
+      leavingBirthCertificate: false,
+      rationCard: false,
+      passportPhotos: false,
+      weddingCard: false,
+    });
+  });
+
+  it('accepts a documentsChecklist with some items toggled true', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      documentsChecklist: { aadharCard: true, weddingCard: true },
+    });
+
+    expect(event.documentsChecklist).toMatchObject({
+      aadharCard: true,
+      panCard: false,
+      weddingCard: true,
+    });
+  });
+
   it.each(['eventFamilyType', 'status', 'eventManager', 'createdBy'])(
     'rejects a document missing %s',
     async (field) => {

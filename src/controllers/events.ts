@@ -3,10 +3,12 @@ import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from
 import type { ServerInferRequest, ServerInferResponses } from '@ts-rest/core';
 import type { contract } from '../contract/index.js';
 import {
+  DOCUMENT_CHECKLIST_ITEM_KEYS,
   Event,
   EventStatus,
   type AccommodationAttributes,
   type ClientContactAttributes,
+  type DocumentsChecklistAttributes,
   type EventDocument,
   type PaymentAttributes,
   type RoomLineAttributes,
@@ -26,6 +28,7 @@ type UpdateEventResponse = ServerInferResponses<typeof contract.updateEvent>;
 type UpdateEventBody = ServerInferRequest<typeof contract.updateEvent>['body'];
 type UpdateEventAccommodationBody = ServerInferRequest<typeof contract.updateEventAccommodation>['body'];
 type UpdateEventPaymentBody = ServerInferRequest<typeof contract.updateEventPayment>['body'];
+type UpdateDocumentsChecklistBody = ServerInferRequest<typeof contract.updateDocumentsChecklist>['body'];
 
 // Narrow (single-member), not the whole per-route union, so the same
 // constant can be returned from any handler whose response union happens to
@@ -495,4 +498,85 @@ export const updateEventPayment: AppRouteMutationImplementation<typeof contract.
   );
 
   return { status: 200, body: toPublicPayment(updated.payment) };
+};
+
+const toPublicDocumentsChecklist = (checklist: DocumentsChecklistAttributes) => ({
+  aadharCard: checklist.aadharCard,
+  panCard: checklist.panCard,
+  leavingBirthCertificate: checklist.leavingBirthCertificate,
+  rationCard: checklist.rationCard,
+  passportPhotos: checklist.passportPhotos,
+  weddingCard: checklist.weddingCard,
+});
+
+// Unlike buildEventUpdate/buildAccommodationUpdate/buildPaymentUpdate, this
+// loops over DOCUMENT_CHECKLIST_ITEM_KEYS instead of repeating one `if`
+// block per field — every item here is a plain boolean with the same `!==`
+// comparison, so there's no per-field custom logic (date/array/ObjectId
+// compares) forcing those other three into their more repetitive shape.
+const buildDocumentsChecklistUpdate = (
+  existing: EventDocument,
+  body: UpdateDocumentsChecklistBody,
+): { update: Record<string, unknown>; changes: PendingChange[] } => {
+  const current = existing.documentsChecklist;
+  const update: Record<string, unknown> = {};
+  const changes: PendingChange[] = [];
+
+  for (const key of DOCUMENT_CHECKLIST_ITEM_KEYS) {
+    const newValue = body[key];
+    if (newValue !== undefined && newValue !== current[key]) {
+      update[`documentsChecklist.${key}`] = newValue;
+      changes.push({ field: key, oldValue: current[key], newValue });
+    }
+  }
+
+  return { update, changes };
+};
+
+// Same last-write-wins, no-locking stance every other Event PATCH already
+// documents — nothing here adds optimistic concurrency either.
+export const updateDocumentsChecklist: AppRouteMutationImplementation<
+  typeof contract.updateDocumentsChecklist
+> = async ({ params, body, req }) => {
+  if (!req.user) {
+    // Unreachable — eventManagerOnly (router.ts) runs authenticate before
+    // this handler ever does; guarded instead of asserted past.
+    throw new Error('updateDocumentsChecklist handler ran without an authenticated user.');
+  }
+  const changedByUserId = req.user.id;
+
+  const existing = await Event.findById(params.id);
+  if (!existing) {
+    return eventNotFound;
+  }
+
+  const { update, changes } = buildDocumentsChecklistUpdate(existing, body);
+
+  if (changes.length === 0) {
+    return { status: 200, body: toPublicDocumentsChecklist(existing.documentsChecklist) };
+  }
+
+  const updated = await Event.findByIdAndUpdate(params.id, update, {
+    returnDocument: 'after',
+    runValidators: true,
+  });
+  if (!updated) {
+    return eventNotFound;
+  }
+  const eventId = updated.id;
+
+  await Promise.all(
+    changes.map((change) =>
+      logChange({
+        entityType: 'Event',
+        entityId: eventId,
+        field: change.field,
+        oldValue: change.oldValue,
+        newValue: change.newValue,
+        changedByUserId,
+      }),
+    ),
+  );
+
+  return { status: 200, body: toPublicDocumentsChecklist(updated.documentsChecklist) };
 };

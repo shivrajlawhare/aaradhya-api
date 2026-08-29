@@ -296,6 +296,31 @@ request shape, not which credential was wrong.
   the first time a story needs to display current payment data (likely the
   Payments tab UI).
 
+### PATCH /events/:id/documents — SETTLED (STORY-024)
+
+- Gated by `requireRole(Role.EventManager)`, same as the other write routes
+  on Event.
+- Six fixed keys (`aadharCard`, `panCard`, `leavingBirthCertificate`,
+  `rationCard`, `passportPhotos`, `weddingCard`), each an optional boolean —
+  a caller sends only the items being toggled. The body schema is
+  `.strict()`: any key outside this fixed six is a `400 VALIDATION_ERROR`
+  (Zod's default object behavior would otherwise silently strip an unknown
+  key, which would look like success to a caller who mistyped one).
+- Response is the checklist itself, not the parent Event — same
+  sub-resource-route convention `PATCH /events/:id/accommodation` and
+  `PATCH /events/:id/payment` already established.
+- A brand-new Event reads every item as `false` — never `null`, never an
+  error — same "always instantiated with defaulted fields" shape STORY-021
+  already used for `payment` (not `accommodation`'s "may be entirely
+  absent" shape).
+- Each toggled item writes its own Change Log Entry — same "one entry per
+  changed field" granularity every other Event PATCH uses; toggling two
+  items in one request writes two entries, not one.
+- `GET /events/:id` does **not** yet include `documentsChecklist` — no
+  story has needed to read it yet. Expect this to recur exactly the way it
+  did for `accommodation` (STORY-020) and `payment` (STORY-023), the first
+  time a story needs to display current checklist state.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

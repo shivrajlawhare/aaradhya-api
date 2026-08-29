@@ -53,6 +53,9 @@ const patchAccommodationAs = (token: string, id: string, body: object) =>
 const patchPaymentAs = (token: string, id: string, body: object) =>
   request(app).patch(`/events/${id}/payment`).set('Authorization', `Bearer ${token}`).send(body);
 
+const patchDocumentsChecklistAs = (token: string, id: string, body: object) =>
+  request(app).patch(`/events/${id}/documents`).set('Authorization', `Bearer ${token}`).send(body);
+
 beforeAll(connectTestDb);
 afterEach(clearCollections);
 afterAll(disconnectTestDb);
@@ -986,5 +989,158 @@ describe('PATCH /events/:id/payment', () => {
     expect(response.body.totalEstimatedAmount).toBe(50000);
     expect(response.body.advanceRequired).toBe(20000);
     expect(response.body.advancePaid).toBe(20000);
+  });
+});
+
+describe('PATCH /events/:id/documents', () => {
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+
+    const response = await request(app)
+      .patch(`/events/${created.body.id}/documents`)
+      .send({ aadharCard: true });
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(creatorToken, validPayload(manager.id));
+      const { token } = await seedCaller(role);
+
+      const response = await patchDocumentsChecklistAs(token, created.body.id, { aadharCard: true });
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchDocumentsChecklistAs(token, '507f1f77bcf86cd799439011', {
+      aadharCard: true,
+    });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' },
+    });
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchDocumentsChecklistAs(token, 'not-an-id', { aadharCard: true });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('reads every item as false for a brand-new Event with no checklist state yet', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    // An empty-body PATCH takes the changes.length === 0 path, returning
+    // the current (untouched) state — this is exactly what a caller would
+    // see before ever toggling anything.
+    const response = await patchDocumentsChecklistAs(token, created.body.id, {});
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      aadharCard: false,
+      panCard: false,
+      leavingBirthCertificate: false,
+      rationCard: false,
+      passportPhotos: false,
+      weddingCard: false,
+    });
+  });
+
+  it('persists a toggled item as a boolean', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchDocumentsChecklistAs(token, created.body.id, { aadharCard: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.aadharCard).toBe(true);
+    expect(response.body.panCard).toBe(false);
+  });
+
+  it('persists toggling an item back from true to false', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchDocumentsChecklistAs(token, created.body.id, { aadharCard: true });
+
+    const response = await patchDocumentsChecklistAs(token, created.body.id, { aadharCard: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.aadharCard).toBe(false);
+  });
+
+  it('rejects a key outside the fixed checklist item list as 400', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchDocumentsChecklistAs(token, created.body.id, { passportCopy: true });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('writes one Change Log Entry per toggled item', async () => {
+    const { caller, token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchDocumentsChecklistAs(token, created.body.id, {
+      aadharCard: true,
+      weddingCard: true,
+    });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries.map((entry) => entry.field).sort()).toEqual(['aadharCard', 'weddingCard']);
+    for (const entry of entries) {
+      expect(entry.changedBy).toBe(caller.id);
+      expect(entry.oldValue).toBe(false);
+      expect(entry.newValue).toBe(true);
+    }
+  });
+
+  it('writes no Change Log Entry for a PATCH that resubmits the same value', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchDocumentsChecklistAs(token, created.body.id, { aadharCard: true });
+
+    const response = await patchDocumentsChecklistAs(token, created.body.id, { aadharCard: true });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries).toHaveLength(1); // only the first PATCH's entry, not a second
+  });
+
+  it('leaves other checklist items untouched when only one item is submitted', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchDocumentsChecklistAs(token, created.body.id, { aadharCard: true, panCard: true });
+
+    const response = await patchDocumentsChecklistAs(token, created.body.id, { weddingCard: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.aadharCard).toBe(true);
+    expect(response.body.panCard).toBe(true);
+    expect(response.body.weddingCard).toBe(true);
   });
 });

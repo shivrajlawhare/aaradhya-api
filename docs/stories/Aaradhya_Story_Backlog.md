@@ -464,6 +464,13 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** A new Event with no checklist state yet (all items should read as `false`/not-received by default, not error or return `null`).
 
+**Decisions (v1):**
+- **The fixed set is a flat object with six named boolean fields, not an array-of-`{key, value}` items** — the SRS's own `documents_checklist[]` array notation is just describing "a fixed set of Document Checklist Items" conceptually; since the set can never grow or shrink via this endpoint (the story's own AC requires rejecting any key outside it), a flat object is functionally identical and far simpler to validate/update/query than modeling six items that will only ever exist as exactly six.
+- **`.strict()` on the Zod body schema is what implements "rejects any key not in that fixed list"** — Zod's default object behavior silently strips unknown keys, which would look like a successful no-op to a caller who mistyped one; `.strict()` turns that into a real `400 VALIDATION_ERROR` instead.
+- **`documentsChecklist` is always instantiated with defaulted (`false`) fields**, the same `default: () => ({})` shape STORY-021 used for `payment` — not `accommodation`'s "may be entirely absent" shape. Every Event genuinely has a checklist from day one; there's no "not applicable" case the way there is for accommodation on an Event with no guest rooms.
+- **The update-diff logic loops over `DOCUMENT_CHECKLIST_ITEM_KEYS`** rather than repeating one `if` block per field by hand (`buildEventUpdate`/`buildAccommodationUpdate`/`buildPaymentUpdate`'s shape) — every item here is a plain boolean with the same `!==` comparison, so there's no per-field custom logic (date/array/ObjectId compares) forcing it into that more repetitive pattern the way the other three needed.
+- **`GET /events/:id` does not yet include `documentsChecklist`** — deliberately not pulled forward, consistent with the same choice made for `accommodation` and `payment`. Flagged here explicitly: expect the same retroactive-addition fix once STORY-025 (Documents tab UI) needs to read current checklist state on load.
+
 ### STORY-025: Documents Checklist tab UI
 **Flow:** An Event Manager opens the Documents tab and checks off items as they're physically received.
 **Acceptance Criteria:**

@@ -6,6 +6,7 @@ import {
   createEvent,
   getEvent,
   listEvents,
+  updateDocumentsChecklist,
   updateEvent,
   updateEventAccommodation,
   updateEventPayment,
@@ -64,5 +65,9 @@ export const router = server.router(contract, {
   updateEventPayment: {
     middleware: eventManagerOnly,
     handler: updateEventPayment,
+  },
+  updateDocumentsChecklist: {
+    middleware: eventManagerOnly,
+    handler: updateDocumentsChecklist,
   },
 });

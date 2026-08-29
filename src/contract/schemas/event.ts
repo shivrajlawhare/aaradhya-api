@@ -2,6 +2,28 @@ import { z } from 'zod';
 import { ClientContactRole, EventStatus } from '../../models/event.js';
 import { objectIdSchema } from './common.js';
 
+// One boolean field per fixed key, hand-written (not built from
+// DOCUMENT_CHECKLIST_ITEM_KEYS) — matches how every other schema field in
+// this file is declared explicitly. `.strict()` is what actually implements
+// this story's "rejects any key not in that fixed list": Zod's default
+// object behavior silently strips unknown keys, which would look like
+// success to a caller who mistyped one; `.strict()` turns that into a 400
+// instead.
+const documentsChecklistFieldsSchema = z.object({
+  aadharCard: z.boolean().optional(),
+  panCard: z.boolean().optional(),
+  leavingBirthCertificate: z.boolean().optional(),
+  rationCard: z.boolean().optional(),
+  passportPhotos: z.boolean().optional(),
+  weddingCard: z.boolean().optional(),
+});
+
+export const updateDocumentsChecklistBodySchema = documentsChecklistFieldsSchema.strict();
+
+// .required() strips the .optional() every input field carries, rather
+// than retyping the same six keys a third time.
+export const documentsChecklistResultSchema = documentsChecklistFieldsSchema.required();
+
 // contactNumber is required, not optional — STORY-011's schema already
 // requires it per row. Leaving it optional here would just push the same
 // failure down into a raw Mongoose ValidationError instead of a clean 400

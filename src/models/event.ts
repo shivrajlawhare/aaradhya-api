@@ -68,6 +68,25 @@ export interface PaymentAttributes {
   paymentMode?: string;
 }
 
+// SRS §4.8 — the fixed, server-defined set of Document Checklist Item keys.
+// Never extended via the API (STORY-024's own AC: reject any key outside
+// this list) — a flat object with one boolean per fixed key, not an
+// array-of-{key,value} items, since the set can never grow or shrink; this
+// is functionally the same "fixed set of Document Checklist Items" the SRS
+// describes, just the simpler shape for something that's never dynamic.
+export const DOCUMENT_CHECKLIST_ITEM_KEYS = [
+  'aadharCard',
+  'panCard',
+  'leavingBirthCertificate',
+  'rationCard',
+  'passportPhotos',
+  'weddingCard',
+] as const;
+
+export type DocumentChecklistItemKey = (typeof DOCUMENT_CHECKLIST_ITEM_KEYS)[number];
+
+export type DocumentsChecklistAttributes = Record<DocumentChecklistItemKey, boolean>;
+
 export interface EventAttributes {
   eventId: string;
   // Free text, not an enum — FR-EVT-1 wants a "dropdown + custom" input, so
@@ -78,6 +97,7 @@ export interface EventAttributes {
   clientContacts: ClientContactAttributes[];
   accommodation?: AccommodationAttributes;
   payment: PaymentAttributes;
+  documentsChecklist: DocumentsChecklistAttributes;
   createdBy: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -122,6 +142,23 @@ const paymentSchema = new Schema<PaymentAttributes>(
   { _id: false },
 );
 
+// Each item defaults to false ("not received yet") — a brand-new Event
+// reads every item as false, never null/error (this story's own edge
+// case), the same "always instantiated with defaulted fields" shape
+// STORY-021 already used for payment (not accommodation's "may be entirely
+// absent" shape — every Event genuinely has this checklist from day one).
+const documentsChecklistSchema = new Schema<DocumentsChecklistAttributes>(
+  {
+    aadharCard: { type: Boolean, required: true, default: false },
+    panCard: { type: Boolean, required: true, default: false },
+    leavingBirthCertificate: { type: Boolean, required: true, default: false },
+    rationCard: { type: Boolean, required: true, default: false },
+    passportPhotos: { type: Boolean, required: true, default: false },
+    weddingCard: { type: Boolean, required: true, default: false },
+  },
+  { _id: false },
+);
+
 // event_manager must point at a real User Account whose role is
 // EventManager — any other user's id (or a nonexistent one) is rejected at
 // the schema level, not left to the create-endpoint to police.
@@ -155,6 +192,9 @@ const eventSchema = new Schema<EventAttributes>(
     // advancePaid all at 0 without STORY-012's create endpoint needing to
     // set anything (this story's own AC: "fields default to 0/unset").
     payment: { type: paymentSchema, required: true, default: () => ({}) },
+    // Always instantiated, same reasoning as payment above — a brand-new
+    // Event reads every checklist item as false, never null/error.
+    documentsChecklist: { type: documentsChecklistSchema, required: true, default: () => ({}) },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true },
