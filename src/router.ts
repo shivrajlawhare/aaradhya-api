@@ -8,6 +8,7 @@ import {
   listEvents,
   updateEvent,
   updateEventAccommodation,
+  updateEventPayment,
 } from './controllers/events.js';
 import { checkHealth } from './controllers/health.js';
 import { createUser, listUsers, updateUser } from './controllers/users.js';
@@ -59,5 +60,9 @@ export const router = server.router(contract, {
   updateEventAccommodation: {
     middleware: eventManagerOnly,
     handler: updateEventAccommodation,
+  },
+  updateEventPayment: {
+    middleware: eventManagerOnly,
+    handler: updateEventPayment,
   },
 });

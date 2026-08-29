@@ -50,6 +50,9 @@ const patchEventAs = (token: string, id: string, body: object) =>
 const patchAccommodationAs = (token: string, id: string, body: object) =>
   request(app).patch(`/events/${id}/accommodation`).set('Authorization', `Bearer ${token}`).send(body);
 
+const patchPaymentAs = (token: string, id: string, body: object) =>
+  request(app).patch(`/events/${id}/payment`).set('Authorization', `Bearer ${token}`).send(body);
+
 beforeAll(connectTestDb);
 afterEach(clearCollections);
 afterAll(disconnectTestDb);
@@ -767,5 +770,189 @@ describe('PATCH /events/:id/accommodation', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('PATCH /events/:id/payment', () => {
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+
+    const response = await request(app)
+      .patch(`/events/${created.body.id}/payment`)
+      .send({ totalEstimatedAmount: 50000 });
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s — enforced by role, not just "logged in"',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(creatorToken, validPayload(manager.id));
+      const { token } = await seedCaller(role);
+
+      const response = await patchPaymentAs(token, created.body.id, { totalEstimatedAmount: 50000 });
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 200 for an Event Manager', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchPaymentAs(token, created.body.id, { totalEstimatedAmount: 50000 });
+
+    expect(response.status).toBe(200);
+  });
+
+  it('returns 404 for a well-formed but nonexistent id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchPaymentAs(token, '507f1f77bcf86cd799439011', { totalEstimatedAmount: 50000 });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' },
+    });
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchPaymentAs(token, 'not-an-id', { totalEstimatedAmount: 50000 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('sets payment fields, returning a freshly computed balance', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchPaymentAs(token, created.body.id, {
+      totalEstimatedAmount: 50000,
+      advanceRequired: 20000,
+      advancePaid: 20000,
+      paymentMode: 'UPI',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      totalEstimatedAmount: 50000,
+      advanceRequired: 20000,
+      advancePaid: 20000,
+      paymentMode: 'UPI',
+      balance: 30000,
+    });
+  });
+
+  it('returns a negative balance, not clamped or errored, when advance_paid exceeds the estimate', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchPaymentAs(token, created.body.id, {
+      totalEstimatedAmount: 50000,
+      advancePaid: 60000,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.balance).toBe(-10000);
+  });
+
+  it('ignores a submitted balance — response always reflects the server-computed value', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchPaymentAs(token, created.body.id, {
+      totalEstimatedAmount: 50000,
+      advancePaid: 20000,
+      balance: 999999,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.balance).toBe(30000);
+  });
+
+  it('allows setting advance_paid_date before advance_paid is ever set — no cross-field validation', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchPaymentAs(token, created.body.id, {
+      advancePaidDate: '2026-05-01T00:00:00.000Z',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.advancePaid).toBe(0);
+    expect(new Date(response.body.advancePaidDate).toISOString()).toBe('2026-05-01T00:00:00.000Z');
+  });
+
+  it('rejects a negative advance_paid as 400 — money in cannot be negative', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchPaymentAs(token, created.body.id, { advancePaid: -1 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('writes one Change Log Entry per changed field', async () => {
+    const { caller, token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchPaymentAs(token, created.body.id, {
+      totalEstimatedAmount: 50000,
+      advancePaid: 20000,
+      paymentMode: 'UPI',
+    });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries.map((entry) => entry.field).sort()).toEqual([
+      'advancePaid',
+      'paymentMode',
+      'totalEstimatedAmount',
+    ]);
+    for (const entry of entries) {
+      expect(entry.changedBy).toBe(caller.id);
+    }
+  });
+
+  it('writes no Change Log Entry for a PATCH that resubmits identical values', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchPaymentAs(token, created.body.id, { totalEstimatedAmount: 50000 });
+
+    const response = await patchPaymentAs(token, created.body.id, { totalEstimatedAmount: 50000 });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries).toHaveLength(1); // only the first PATCH's entry, not a second
+  });
+
+  it('leaves other payment fields untouched when only one field is submitted', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchPaymentAs(token, created.body.id, { totalEstimatedAmount: 50000, advanceRequired: 20000 });
+
+    const response = await patchPaymentAs(token, created.body.id, { advancePaid: 20000 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.totalEstimatedAmount).toBe(50000);
+    expect(response.body.advanceRequired).toBe(20000);
+    expect(response.body.advancePaid).toBe(20000);
   });
 });

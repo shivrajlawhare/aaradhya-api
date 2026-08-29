@@ -8,6 +8,7 @@ import {
   type AccommodationAttributes,
   type ClientContactAttributes,
   type EventDocument,
+  type PaymentAttributes,
   type RoomLineAttributes,
 } from '../models/event.js';
 import {
@@ -17,12 +18,14 @@ import {
   computeTotalOccupancy,
 } from '../services/accommodation.js';
 import { logChange } from '../services/change-log.js';
+import { computeBalance } from '../services/payment.js';
 
 type CreateEventResponse = ServerInferResponses<typeof contract.createEvent>;
 type GetEventResponse = ServerInferResponses<typeof contract.getEvent>;
 type UpdateEventResponse = ServerInferResponses<typeof contract.updateEvent>;
 type UpdateEventBody = ServerInferRequest<typeof contract.updateEvent>['body'];
 type UpdateEventAccommodationBody = ServerInferRequest<typeof contract.updateEventAccommodation>['body'];
+type UpdateEventPaymentBody = ServerInferRequest<typeof contract.updateEventPayment>['body'];
 
 // Narrow (single-member), not the whole per-route union, so the same
 // constant can be returned from any handler whose response union happens to
@@ -383,4 +386,112 @@ export const updateEventAccommodation: AppRouteMutationImplementation<
   );
 
   return { status: 200, body: toPublicAccommodation(updated.accommodation) };
+};
+
+// advancePaidDate/paymentMode are nullable, not just absent — matching
+// accommodation's checkIn/checkOut convention. balance is always freshly
+// computed from whatever totalEstimatedAmount/advancePaid are currently
+// stored, never itself stored (STORY-021).
+const toPublicPayment = (payment: PaymentAttributes) => ({
+  totalEstimatedAmount: payment.totalEstimatedAmount,
+  advanceRequired: payment.advanceRequired,
+  advancePaid: payment.advancePaid,
+  advancePaidDate: payment.advancePaidDate ?? null,
+  paymentMode: payment.paymentMode ?? null,
+  balance: computeBalance(payment.totalEstimatedAmount, payment.advancePaid),
+});
+
+// Five tracked fields, one Change Log Entry per changed field — same
+// granularity every other PATCH on Event uses. No cross-field validation
+// between advancePaidDate and advancePaid: this story's own edge case is
+// resolved as "allowed" (see the story backlog Decisions), so setting one
+// without the other already being real is never rejected here.
+const buildPaymentUpdate = (
+  existing: EventDocument,
+  body: UpdateEventPaymentBody,
+): { update: Record<string, unknown>; changes: PendingChange[] } => {
+  const current = existing.payment;
+  const update: Record<string, unknown> = {};
+  const changes: PendingChange[] = [];
+
+  if (body.totalEstimatedAmount !== undefined && body.totalEstimatedAmount !== current.totalEstimatedAmount) {
+    update['payment.totalEstimatedAmount'] = body.totalEstimatedAmount;
+    changes.push({
+      field: 'totalEstimatedAmount',
+      oldValue: current.totalEstimatedAmount,
+      newValue: body.totalEstimatedAmount,
+    });
+  }
+  if (body.advanceRequired !== undefined && body.advanceRequired !== current.advanceRequired) {
+    update['payment.advanceRequired'] = body.advanceRequired;
+    changes.push({ field: 'advanceRequired', oldValue: current.advanceRequired, newValue: body.advanceRequired });
+  }
+  if (body.advancePaid !== undefined && body.advancePaid !== current.advancePaid) {
+    update['payment.advancePaid'] = body.advancePaid;
+    changes.push({ field: 'advancePaid', oldValue: current.advancePaid, newValue: body.advancePaid });
+  }
+  if (body.advancePaidDate !== undefined && !areDatesEqual(body.advancePaidDate, current.advancePaidDate)) {
+    update['payment.advancePaidDate'] = body.advancePaidDate;
+    changes.push({
+      field: 'advancePaidDate',
+      oldValue: current.advancePaidDate ?? null,
+      newValue: body.advancePaidDate,
+    });
+  }
+  if (body.paymentMode !== undefined && body.paymentMode !== current.paymentMode) {
+    update['payment.paymentMode'] = body.paymentMode;
+    changes.push({ field: 'paymentMode', oldValue: current.paymentMode ?? null, newValue: body.paymentMode });
+  }
+
+  return { update, changes };
+};
+
+// Same last-write-wins, no-locking stance every other Event PATCH already
+// documents — nothing here adds optimistic concurrency either.
+export const updateEventPayment: AppRouteMutationImplementation<typeof contract.updateEventPayment> = async ({
+  params,
+  body,
+  req,
+}) => {
+  if (!req.user) {
+    // Unreachable — eventManagerOnly (router.ts) runs authenticate before
+    // this handler ever does; guarded instead of asserted past.
+    throw new Error('updateEventPayment handler ran without an authenticated user.');
+  }
+  const changedByUserId = req.user.id;
+
+  const existing = await Event.findById(params.id);
+  if (!existing) {
+    return eventNotFound;
+  }
+
+  const { update, changes } = buildPaymentUpdate(existing, body);
+
+  if (changes.length === 0) {
+    return { status: 200, body: toPublicPayment(existing.payment) };
+  }
+
+  const updated = await Event.findByIdAndUpdate(params.id, update, {
+    returnDocument: 'after',
+    runValidators: true,
+  });
+  if (!updated) {
+    return eventNotFound;
+  }
+  const eventId = updated.id;
+
+  await Promise.all(
+    changes.map((change) =>
+      logChange({
+        entityType: 'Event',
+        entityId: eventId,
+        field: change.field,
+        oldValue: change.oldValue,
+        newValue: change.newValue,
+        changedByUserId,
+      }),
+    ),
+  );
+
+  return { status: 200, body: toPublicPayment(updated.payment) };
 };

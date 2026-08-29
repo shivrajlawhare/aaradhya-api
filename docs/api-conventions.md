@@ -249,6 +249,39 @@ request shape, not which credential was wrong.
   — never `totalInclGst`, since that's never stored and logging a transient,
   always-recomputed value would misrepresent what's actually persisted.
 
+### PATCH /events/:id/payment — SETTLED (STORY-022)
+
+- Gated by `requireRole(Role.EventManager)`, same as the other write routes
+  on Event.
+- Every field is optional (`totalEstimatedAmount`, `advanceRequired`,
+  `advancePaid`, `advancePaidDate`, `paymentMode`) — same PATCH semantics
+  as every other sub-resource on Event.
+- The **response body is the Payment Record itself**, not the parent Event
+  — same "sub-resource route returns its sub-resource" convention
+  `PATCH /events/:id/accommodation` already established. `balance` is
+  always freshly computed (STORY-021's `computeBalance`) from whatever
+  `totalEstimatedAmount`/`advancePaid` are currently stored — never itself
+  stored, so a submitted `balance` in the request body is silently ignored
+  (the schema doesn't accept the key at all).
+- `totalEstimatedAmount`, `advanceRequired`, and `advancePaid` all reject a
+  negative value as `400 VALIDATION_ERROR` — "money in can't be negative"
+  applies to all three, not just `advance_paid`. `balance` itself, being
+  derived, is unaffected — it can still go negative (overpayment), which is
+  the correct, representable state, not an error.
+- **No cross-field validation between `advancePaidDate` and `advancePaid`**
+  — setting `advancePaidDate` while `advancePaid` is still `0` is allowed,
+  not rejected. Decided (this story's own edge case) as: a caller may
+  record an expected/planned advance-payment date before the money is
+  actually confirmed as received.
+- Each of the five fields that actually changes writes its own Change Log
+  Entry — same "one entry per changed field" granularity every other Event
+  PATCH uses.
+- `GET /events/:id` does **not** yet include `payment` in its response
+  (unlike `accommodation`, added in STORY-020) — no story has needed to
+  read it yet. Expect this to recur the same way it did for accommodation,
+  the first time a story needs to display current payment data (likely the
+  Payments tab UI).
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

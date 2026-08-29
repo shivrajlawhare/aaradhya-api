@@ -87,6 +87,31 @@ export const accommodationResultSchema = z.object({
   totalCharges: z.number(),
 });
 
+// Every field optional (PATCH semantics). No cross-field validation between
+// advancePaidDate and advancePaid — STORY-022's own decision: a caller may
+// set an expected/planned advance_paid_date before advance_paid actually
+// reflects a real payment.
+export const updateEventPaymentBodySchema = z.object({
+  totalEstimatedAmount: z.number().min(0).optional(),
+  advanceRequired: z.number().min(0).optional(),
+  advancePaid: z.number().min(0).optional(),
+  advancePaidDate: z.coerce.date().optional(),
+  paymentMode: z.string().trim().min(1).optional(),
+});
+
+// balance is derived (STORY-021's computeBalance) — never accepted as
+// input, always present on output. advancePaidDate/paymentMode are
+// nullable, not just optional, matching accommodation's checkIn/checkOut
+// convention for "genuinely unset yet".
+export const paymentResultSchema = z.object({
+  totalEstimatedAmount: z.number(),
+  advanceRequired: z.number(),
+  advancePaid: z.number(),
+  advancePaidDate: z.date().nullable(),
+  paymentMode: z.string().nullable(),
+  balance: z.number(),
+});
+
 // The public Event shape — everything STORY-011's schema persists, plus the
 // Accommodation Block (STORY-018/019). GET /events/:id (STORY-013) never
 // exposed accommodation at all until now — STORY-020 (the Rooms tab UI)

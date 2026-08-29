@@ -434,6 +434,12 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** Setting `advance_paid_date` without `advance_paid` being set yet (decide and document whether this is allowed).
 
+**Decisions (v1):**
+- **Setting `advance_paid_date` before `advance_paid` is ever set is allowed, not rejected** — no cross-field validation between the two. A caller may record an expected/planned advance-payment date before the money is actually confirmed as received; nothing in the spec suggests these two fields must move together.
+- **The response is the Payment Record itself, not the parent Event** — same "sub-resource route returns its sub-resource" convention `PATCH /events/:id/accommodation` already established, for the same reason.
+- **`min: 0` rejects a negative value on all three money-input fields** (`total_estimated_amount`, `advance_required`, `advance_paid`), not just `advance_paid` as the edge case literally names — consistent with the same broadening already made in STORY-021's schema decision. `balance` itself is unaffected and can still go negative — that's the correct, representable overpayment state, not an error.
+- **`GET /events/:id` does *not* yet include `payment`**, unlike `accommodation` (added STORY-020) — deliberately not pulled forward, since no story has needed to read it yet, matching "don't implement beyond what the current story's AC asks for." Flagged here explicitly: this will very likely need the exact same fix STORY-020 needed for accommodation, the first time STORY-023 (Payments tab UI) needs to display current payment data on load.
+
 ### STORY-023: Payments tab UI (Event Manager only)
 **Flow:** An Event Manager opens the Payments tab (invisible to every other role) and records/edits payment fields, seeing the computed balance update.
 **Acceptance Criteria:**

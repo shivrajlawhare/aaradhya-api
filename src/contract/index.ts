@@ -8,8 +8,10 @@ import {
   createEventBodySchema,
   eventIdParamsSchema,
   eventResultSchema,
+  paymentResultSchema,
   updateAccommodationBodySchema,
   updateEventBodySchema,
+  updateEventPaymentBodySchema,
 } from './schemas/event.js';
 import {
   createUserBodySchema,
@@ -137,5 +139,16 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: "Edit an Event's Accommodation Block (Event Manager only)",
+  },
+  updateEventPayment: {
+    method: 'PATCH',
+    path: '/events/:id/payment',
+    pathParams: eventIdParamsSchema,
+    body: updateEventPaymentBodySchema,
+    responses: {
+      200: paymentResultSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Edit an Event's Payment Record (Event Manager only)",
   },
 });
