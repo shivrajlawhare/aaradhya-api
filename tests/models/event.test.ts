@@ -4,7 +4,10 @@ import {
   ClientContactRole,
   Event,
   EventStatus,
+  SeatingArrangement,
+  SessionStatus,
   type ClientContactAttributes,
+  type SessionAttributes,
 } from '../../src/models/event.js';
 import { Role, User } from '../../src/models/user.js';
 import { clearCollections, connectTestDb, disconnectTestDb } from '../support/db.js';
@@ -14,6 +17,16 @@ const validContact = (): ClientContactAttributes => ({
   name: 'Priya Nair',
   contactNumber: '9876543210',
   role: ClientContactRole.Bride,
+});
+
+const validSession = (overrides: Partial<SessionAttributes> = {}): Partial<SessionAttributes> => ({
+  sessionType: 'Wedding',
+  venue: 'Lawn',
+  venueCost: 50000,
+  startDate: new Date('2026-06-15'),
+  endDate: new Date('2026-06-15'),
+  pax: 200,
+  ...overrides,
 });
 
 const createEventManager = () =>
@@ -445,6 +458,192 @@ describe('Event model', () => {
       weddingCard: true,
     });
   });
+
+  it('accepts an Event with no sessions at all', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+    });
+
+    expect(event.sessions).toEqual([]);
+  });
+
+  it('accepts a single-day session where start_date === end_date', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [validSession({ startDate: new Date('2026-06-15'), endDate: new Date('2026-06-15') })],
+    });
+
+    expect(event.sessions[0]?.startDate).toEqual(event.sessions[0]?.endDate);
+  });
+
+  it('accepts a multi-day session where end_date > start_date, the same code path as single-day', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [validSession({ startDate: new Date('2026-06-15'), endDate: new Date('2026-06-17') })],
+    });
+
+    expect(event.sessions).toHaveLength(1);
+  });
+
+  it('rejects a session with end_date before start_date', async () => {
+    const manager = await createEventManager();
+
+    const error = await expectValidationError(Event, {
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [validSession({ startDate: new Date('2026-06-15'), endDate: new Date('2026-06-14') })],
+    });
+
+    expect(error.errors).toHaveProperty('sessions.0.endDate');
+  });
+
+  it('defaults session_status to Active when not supplied', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [validSession()],
+    });
+
+    expect(event.sessions[0]?.sessionStatus).toBe(SessionStatus.Active);
+  });
+
+  it('accepts an explicit Cancelled session_status', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [validSession({ sessionStatus: SessionStatus.Cancelled })],
+    });
+
+    expect(event.sessions[0]?.sessionStatus).toBe(SessionStatus.Cancelled);
+  });
+
+  it('rejects a session_status outside Active/Cancelled', async () => {
+    const manager = await createEventManager();
+
+    const error = await expectValidationError(Event, {
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [{ ...validSession(), sessionStatus: 'Postponed' }],
+    });
+
+    expect(error.errors).toHaveProperty('sessions.0.sessionStatus');
+  });
+
+  it('defaults setup to its zero/false state for a session with no setup supplied', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [validSession()],
+    });
+
+    expect(event.sessions[0]?.setup).toMatchObject({
+      tableCount: 0,
+      chairCount: 0,
+      stage: false,
+      buffet: false,
+      registrationDesk: false,
+      vipSeating: false,
+      brideGroomSeating: false,
+    });
+  });
+
+  it('accepts a fully populated setup sub-object', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [
+        validSession({
+          setup: {
+            seating: SeatingArrangement.RoundTables,
+            tableCount: 20,
+            chairCount: 200,
+            stage: true,
+            buffet: true,
+            registrationDesk: true,
+            vipSeating: true,
+            brideGroomSeating: true,
+            notes: 'Stage faces the lawn entrance.',
+          },
+        }),
+      ],
+    });
+
+    expect(event.sessions[0]?.setup).toMatchObject({
+      seating: SeatingArrangement.RoundTables,
+      tableCount: 20,
+      chairCount: 200,
+      stage: true,
+      notes: 'Stage faces the lawn entrance.',
+    });
+  });
+
+  it('rejects a seating value outside the fixed arrangement list', async () => {
+    const manager = await createEventManager();
+
+    const error = await expectValidationError(Event, {
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [{ ...validSession(), setup: { seating: 'Igloo' } }],
+    });
+
+    expect(error.errors).toHaveProperty('sessions.0.setup.seating');
+  });
+
+  it.each(['sessionType', 'venue', 'startDate', 'endDate'])(
+    'rejects a session missing %s',
+    async (field) => {
+      const manager = await createEventManager();
+      const session: Record<string, unknown> = { ...validSession() };
+      delete session[field];
+
+      const error = await expectValidationError(Event, {
+        eventFamilyType: 'Wedding',
+        status: EventStatus.Tentative,
+        eventManager: manager.id,
+        createdBy: manager.id,
+        sessions: [session],
+      });
+
+      expect(error.errors).toHaveProperty(`sessions.0.${field}`);
+    },
+  );
 
   it.each(['eventFamilyType', 'status', 'eventManager', 'createdBy'])(
     'rejects a document missing %s',

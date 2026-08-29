@@ -87,6 +87,77 @@ export type DocumentChecklistItemKey = (typeof DOCUMENT_CHECKLIST_ITEM_KEYS)[num
 
 export type DocumentsChecklistAttributes = Record<DocumentChecklistItemKey, boolean>;
 
+// SRS §4.2 — Session Status, independent of the parent Event's own `status`;
+// one Session inside a multi-day Event can be cancelled without cancelling
+// the Event. Defaults to Active (this story's own AC).
+export enum SessionStatus {
+  Active = 'Active',
+  Cancelled = 'Cancelled',
+}
+
+export const SESSION_STATUS_VALUES: SessionStatus[] = Object.values(SessionStatus);
+
+// SRS §4.2's `setup` field lists a fixed set of seating arrangements
+// ("Theatre/Round tables/Classroom/U-shape/Cluster/Other") as a closed list
+// with an `Other` catch-all member — the same closed-enum-with-a-terminal-
+// option shape as EventStatus/ClientContactRole, not the free-text "dropdown
+// + custom value" shape used for event_family_type/session_type/venue below
+// (those explicitly say "+ custom value/custom", this field doesn't).
+export enum SeatingArrangement {
+  Theatre = 'Theatre',
+  RoundTables = 'RoundTables',
+  Classroom = 'Classroom',
+  UShape = 'UShape',
+  Cluster = 'Cluster',
+  Other = 'Other',
+}
+
+export const SEATING_ARRANGEMENT_VALUES: SeatingArrangement[] = Object.values(SeatingArrangement);
+
+// SRS §4.2 — a Session's setup sub-object: seating arrangement, table/chair
+// counts, a handful of yes/no facility flags, and one free-text notes field
+// for anything not otherwise structured (decoration/stage/AV/parking).
+// Always instantiated with defaulted fields (see `default: () => ({})`
+// below), the same "every Session genuinely has one from day one" shape
+// STORY-021/STORY-024 already used for payment/documentsChecklist — not
+// accommodation's "may be entirely absent" shape.
+export interface SessionSetupAttributes {
+  seating?: SeatingArrangement;
+  tableCount: number;
+  chairCount: number;
+  stage: boolean;
+  buffet: boolean;
+  registrationDesk: boolean;
+  vipSeating: boolean;
+  brideGroomSeating: boolean;
+  notes?: string;
+}
+
+// SRS §4.2 — one scheduled block of activity within an Event. items[] (Meal/
+// Event Items, §4.5) is deliberately absent here — this story's own Flow
+// line lists exactly session_type/venue/venue_cost/start_date/end_date/
+// start_time/end_time/pax/session_status/setup, not Items; that's a later
+// story's schema to add.
+export interface SessionAttributes {
+  // Free text, not an enum — SRS phrases this exactly like
+  // event_family_type ("dropdown + custom"), so the schema stays open the
+  // same way.
+  sessionType: string;
+  // Free text, not an enum — same "dropdown + custom" phrasing as venue.
+  venue: string;
+  venueCost: number;
+  startDate: Date;
+  endDate: Date;
+  // Local time-of-day values ("18:30"), not merged into a timezone-aware
+  // datetime and not part of any overlap query (Spec_Amendment_MultiDate_
+  // Sessions.md edge cases) — plain optional strings, not Dates.
+  startTime?: string;
+  endTime?: string;
+  pax: number;
+  sessionStatus: SessionStatus;
+  setup: SessionSetupAttributes;
+}
+
 export interface EventAttributes {
   eventId: string;
   // Free text, not an enum — FR-EVT-1 wants a "dropdown + custom" input, so
@@ -98,6 +169,7 @@ export interface EventAttributes {
   accommodation?: AccommodationAttributes;
   payment: PaymentAttributes;
   documentsChecklist: DocumentsChecklistAttributes;
+  sessions: SessionAttributes[];
   createdBy: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -159,6 +231,64 @@ const documentsChecklistSchema = new Schema<DocumentsChecklistAttributes>(
   { _id: false },
 );
 
+// Every field defaults to its "nothing entered yet" value — counts/flags
+// default to 0/false, same convention documentsChecklistSchema already uses
+// for its own booleans; seating/notes stay optional with no default, since
+// there's no sensible "not entered yet" enum member or placeholder text.
+const sessionSetupSchema = new Schema<SessionSetupAttributes>(
+  {
+    seating: { type: String, enum: SEATING_ARRANGEMENT_VALUES },
+    tableCount: { type: Number, required: true, default: 0, min: 0 },
+    chairCount: { type: Number, required: true, default: 0, min: 0 },
+    stage: { type: Boolean, required: true, default: false },
+    buffet: { type: Boolean, required: true, default: false },
+    registrationDesk: { type: Boolean, required: true, default: false },
+    vipSeating: { type: Boolean, required: true, default: false },
+    brideGroomSeating: { type: Boolean, required: true, default: false },
+    notes: { type: String, trim: true },
+  },
+  { _id: false },
+);
+
+// end_date's validator is a regular function (not an arrow function) so
+// `this` binds to the subdocument being validated, per Mongoose's own
+// validator-context convention — this is the schema-level enforcement of
+// this story's own AC ("Schema rejects end_date < start_date").
+const sessionSchema = new Schema<SessionAttributes>({
+  sessionType: { type: String, required: true, trim: true },
+  venue: { type: String, required: true, trim: true },
+  venueCost: { type: Number, required: true, default: 0, min: 0 },
+  startDate: { type: Date, required: true },
+  endDate: {
+    type: Date,
+    required: true,
+    validate: {
+      // Mongoose types `this` as a union of the hydrated subdocument and
+      // Query (the latter only applies when an update explicitly opts in
+      // via `{ context: 'query' }`, which nothing here does) — narrowed
+      // with a plain `in` check rather than an `as` cast (typescript-rules
+      // rule 1).
+      validator: function (value: Date): boolean {
+        return 'startDate' in this ? value.getTime() >= this.startDate.getTime() : true;
+      },
+      message: 'end_date must be on or after start_date.',
+    },
+  },
+  startTime: { type: String, trim: true },
+  endTime: { type: String, trim: true },
+  pax: { type: Number, required: true, default: 0, min: 0 },
+  sessionStatus: {
+    type: String,
+    required: true,
+    enum: SESSION_STATUS_VALUES,
+    default: SessionStatus.Active,
+  },
+  // Always instantiated, same "default: () => ({})" reasoning as payment/
+  // documentsChecklist above — every Session genuinely has a setup record
+  // from the moment it's added, even if every field is still at its default.
+  setup: { type: sessionSetupSchema, required: true, default: () => ({}) },
+});
+
 // event_manager must point at a real User Account whose role is
 // EventManager — any other user's id (or a nonexistent one) is rejected at
 // the schema level, not left to the create-endpoint to police.
@@ -195,6 +325,10 @@ const eventSchema = new Schema<EventAttributes>(
     // Always instantiated, same reasoning as payment above — a brand-new
     // Event reads every checklist item as false, never null/error.
     documentsChecklist: { type: documentsChecklistSchema, required: true, default: () => ({}) },
+    // Zero or more at the schema level, same reasoning as clientContacts —
+    // this story only defines the shape; an "at least one Session" rule (if
+    // any) belongs to whichever later story adds the add/remove endpoint.
+    sessions: { type: [sessionSchema], default: [] },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true },

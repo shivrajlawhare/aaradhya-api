@@ -1,7 +1,6 @@
 import { config } from '../config.js';
 import { roundToCurrency } from '../utils/currency.js';
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
+import { computeInclusiveDayCount } from '../utils/date.js';
 
 export interface RoomLineInput {
   occupancy: number;
@@ -25,8 +24,10 @@ export interface RoomLineInput {
 // check-out one calendar day apart is 2 days, not 1. check_out before
 // check_in (an invalid range) is not guarded here — validating that is a
 // schema/endpoint concern for STORY-019, not this pure-math function's job.
+// Delegates to the shared computeInclusiveDayCount (STORY-026 extracted it
+// once Session's start_date/end_date needed the identical formula).
 export const computeTotalDays = (checkIn: Date, checkOut: Date): number =>
-  Math.floor((checkOut.getTime() - checkIn.getTime()) / MS_PER_DAY) + 1;
+  computeInclusiveDayCount(checkIn, checkOut);
 
 // tariff × no_of_rooms, GST-inclusive at the org's single flat rate
 // (config.gstRatePercent — SRS Assumption A9's "single organization-wide
