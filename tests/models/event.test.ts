@@ -237,6 +237,115 @@ describe('Event model', () => {
     expect(error.errors).toHaveProperty('clientContacts.0.role');
   });
 
+  it('accepts an Event with no accommodation at all', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+    });
+
+    expect(event.accommodation).toBeUndefined();
+  });
+
+  it('accepts an accommodation block with zero room_lines', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      accommodation: {
+        checkIn: new Date('2026-06-15'),
+        checkOut: new Date('2026-06-16'),
+        roomLines: [],
+      },
+    });
+
+    expect(event.accommodation?.roomLines).toEqual([]);
+  });
+
+  it('accepts an accommodation block with multiple room lines', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      accommodation: {
+        checkIn: new Date('2026-06-15'),
+        checkOut: new Date('2026-06-16'),
+        roomLines: [
+          { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 3 },
+          { roomType: 'Suite', occupancy: 4, tariff: 12000, noOfRooms: 1 },
+        ],
+      },
+    });
+
+    expect(event.accommodation?.roomLines).toHaveLength(2);
+    expect(event.accommodation?.roomLines.map((line) => line.roomType)).toEqual(['Double', 'Suite']);
+  });
+
+  it('accepts a room line with no_of_rooms: 0 as a placeholder row', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      accommodation: {
+        roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 0 }],
+      },
+    });
+
+    expect(event.accommodation?.roomLines[0]?.noOfRooms).toBe(0);
+  });
+
+  it('rejects a room line with a negative no_of_rooms', async () => {
+    const manager = await createEventManager();
+
+    const error = await expectValidationError(Event, {
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      accommodation: {
+        roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: -1 }],
+      },
+    });
+
+    expect(error.errors).toHaveProperty('accommodation.roomLines.0.noOfRooms');
+  });
+
+  it.each(['roomType', 'occupancy', 'tariff', 'noOfRooms'])(
+    'rejects a room line missing %s',
+    async (field) => {
+      const manager = await createEventManager();
+      const roomLine: Record<string, unknown> = {
+        roomType: 'Double',
+        occupancy: 2,
+        tariff: 5000,
+        noOfRooms: 1,
+      };
+      delete roomLine[field];
+
+      const error = await expectValidationError(Event, {
+        eventFamilyType: 'Wedding',
+        status: EventStatus.Tentative,
+        eventManager: manager.id,
+        createdBy: manager.id,
+        accommodation: { roomLines: [roomLine] },
+      });
+
+      expect(error.errors).toHaveProperty(`accommodation.roomLines.0.${field}`);
+    },
+  );
+
   it.each(['eventFamilyType', 'status', 'eventManager', 'createdBy'])(
     'rejects a document missing %s',
     async (field) => {

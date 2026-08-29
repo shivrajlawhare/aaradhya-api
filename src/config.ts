@@ -26,4 +26,8 @@ export const config = {
   corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
     .split(',')
     .map((origin) => origin.trim()),
+  // The single organization-wide GST rate (SRS Assumption A9) applied to
+  // Accommodation room-line totals (STORY-018) and, later, the Quotation
+  // summary. A percentage, e.g. 18 means 18%, not tax-per-room-type slabs.
+  gstRatePercent: Number(process.env.GST_RATE_PERCENT ?? 18),
 } as const;

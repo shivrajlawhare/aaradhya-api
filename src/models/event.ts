@@ -28,6 +28,29 @@ export interface ClientContactAttributes {
   role: ClientContactRole;
 }
 
+// SRS §4.3 — one Room Line within an Accommodation Block. total_incl_gst is
+// deliberately absent here: it's a derived value (src/services/
+// accommodation.ts), never stored, so it can never drift out of sync with
+// tariff/no_of_rooms.
+export interface RoomLineAttributes {
+  roomType: string;
+  occupancy: number;
+  tariff: number;
+  noOfRooms: number;
+}
+
+// SRS §4.3 — the single event-level Accommodation Block. Optional on the
+// Event as a whole (STORY-012's create flow doesn't populate it — it's
+// added/edited later via STORY-019's dedicated endpoint), and roomLines can
+// be empty (not every Event needs guest rooms, per STORY-019's own edge
+// case) — total_days/total_occupancy/total_charges are likewise never
+// stored, computed on demand from checkIn/checkOut/roomLines.
+export interface AccommodationAttributes {
+  checkIn?: Date;
+  checkOut?: Date;
+  roomLines: RoomLineAttributes[];
+}
+
 export interface EventAttributes {
   eventId: string;
   // Free text, not an enum — FR-EVT-1 wants a "dropdown + custom" input, so
@@ -36,6 +59,7 @@ export interface EventAttributes {
   status: EventStatus;
   eventManager: Types.ObjectId;
   clientContacts: ClientContactAttributes[];
+  accommodation?: AccommodationAttributes;
   createdBy: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -46,6 +70,24 @@ const clientContactSchema = new Schema<ClientContactAttributes>({
   contactNumber: { type: String, required: true, trim: true },
   role: { type: String, required: true, enum: CLIENT_CONTACT_ROLE_VALUES },
 });
+
+// no_of_rooms: 0 is a valid placeholder row (STORY-018's own edge case,
+// decided as "allowed") — min: 0 rejects only negative values.
+const roomLineSchema = new Schema<RoomLineAttributes>({
+  roomType: { type: String, required: true, trim: true },
+  occupancy: { type: Number, required: true, min: 0 },
+  tariff: { type: Number, required: true, min: 0 },
+  noOfRooms: { type: Number, required: true, min: 0 },
+});
+
+const accommodationSchema = new Schema<AccommodationAttributes>(
+  {
+    checkIn: { type: Date },
+    checkOut: { type: Date },
+    roomLines: { type: [roomLineSchema], default: [] },
+  },
+  { _id: false },
+);
 
 // event_manager must point at a real User Account whose role is
 // EventManager — any other user's id (or a nonexistent one) is rejected at
@@ -73,6 +115,7 @@ const eventSchema = new Schema<EventAttributes>(
     // where "at least one" gets enforced, so this schema stays reusable by
     // anything that needs an Event shape without that create-time rule.
     clientContacts: { type: [clientContactSchema], default: [] },
+    accommodation: { type: accommodationSchema },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true },
