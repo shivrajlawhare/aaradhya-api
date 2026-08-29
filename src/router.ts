@@ -15,6 +15,7 @@ import {
   updateSession,
 } from './controllers/events.js';
 import { checkHealth } from './controllers/health.js';
+import { createMenuItem, listMenuItems } from './controllers/menu-items.js';
 import { createUser, listUsers, updateUser } from './controllers/users.js';
 import { authenticate, requireRole } from './middleware/auth.js';
 import { Role } from './models/user.js';
@@ -84,5 +85,13 @@ export const router = server.router(contract, {
   deleteSession: {
     middleware: eventManagerOnly,
     handler: deleteSession,
+  },
+  listMenuItems: {
+    middleware: authenticatedOnly,
+    handler: listMenuItems,
+  },
+  createMenuItem: {
+    middleware: authenticatedOnly,
+    handler: createMenuItem,
   },
 });

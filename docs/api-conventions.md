@@ -431,6 +431,41 @@ request shape, not which credential was wrong.
   draft state; nothing here enforces an "at least one Session" rule. It
   simply won't appear on the calendar per STORY-034's exclusion rule.
 
+### GET/POST /menu-items — SETTLED (STORY-030)
+
+- Both gated by `authenticate` only, no `requireRole` — any authenticated
+  caller can search and add (this story's own AC: the master list "grows
+  organically" from any manager's entry, matching SRS Assumption A8, not
+  just Event Manager). The only other `authenticatedOnly`, no-role-check
+  routes so far are `GET /events`/`GET /events/:id`.
+- `name` uniqueness is case-insensitive, enforced by a MongoDB **collation
+  index** (`{ locale: 'en', strength: 2 }`) rather than a shadow lowercase
+  field — unlike `User.username` (normalised to lowercase on write, since a
+  username's display casing doesn't matter), a Menu Item's `name` is
+  user-facing display text ("Paneer Tikka") that must keep its as-entered
+  casing; the collation makes the *uniqueness check* case-insensitive
+  without touching what's actually stored/displayed.
+- A duplicate `name` (any casing) is `409 MENU_ITEM_NAME_TAKEN` — the exact
+  same `isDuplicateKeyError`-catches-E11000 pattern `POST /users` already
+  established for `USERNAME_TAKEN`; that check moved to
+  `src/utils/mongo-errors.ts` once this became its second real caller.
+- `GET /menu-items?search=` is a case-insensitive **substring** match
+  (`$regex` + `$options: 'i'`), with the caller-supplied term regex-escaped
+  first — a literal search for `"3.5"` or `"*"` must match that literal
+  text, not be interpreted as a pattern.
+- **An empty or omitted `search` returns the full list, not a 400** (this
+  story's own edge case, decided explicitly since the AC calls out that
+  it must be one or the other) — no filter reads the same as "browsing the
+  whole master list," the same way an empty search box would behave in the
+  UI STORY-033 will eventually build against this endpoint.
+- `default_cost_per_plate` is optional in the create body, falling back to
+  the schema's own default (`0`) — a Menu Item added ad hoc mid-entry
+  (SRS §4.6/FR-SES-3) may not have an agreed cost yet.
+- `created_via` (SRS §4.6's own field, distinguishing ad-hoc-added from
+  pre-seeded) is deliberately **not** implemented — this story's own AC
+  only asks for `name`/`default_cost_per_plate`; add it only if a later
+  story's AC actually needs to distinguish the two.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

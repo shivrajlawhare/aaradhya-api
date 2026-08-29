@@ -2,15 +2,13 @@ import { hash } from '@node-rs/argon2';
 import type { ServerInferRequest, ServerInferResponses } from '@ts-rest/core';
 import type { contract } from '../contract/index.js';
 import { Role, User, type UserDocument } from '../models/user.js';
+import { isDuplicateKeyError } from '../utils/mongo-errors.js';
 
 type CreateUserRequest = ServerInferRequest<typeof contract.createUser>;
 type CreateUserResponse = ServerInferResponses<typeof contract.createUser>;
 type ListUsersResponse = ServerInferResponses<typeof contract.listUsers>;
 type UpdateUserRequest = ServerInferRequest<typeof contract.updateUser>;
 type UpdateUserResponse = ServerInferResponses<typeof contract.updateUser>;
-
-const isDuplicateKeyError = (error: unknown): boolean =>
-  typeof error === 'object' && error !== null && 'code' in error && error.code === 11000;
 
 const userNotFound: UpdateUserResponse = {
   status: 404,

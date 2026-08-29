@@ -577,6 +577,16 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** Searching with an empty query string (return the full list or a 400 — pick one and document it, don't leave it undefined behavior).
 
+**Decisions (v1):**
+- **Empty/omitted `search` returns the full list, not a 400** — this story's own edge case explicitly asks for one or the other; chosen because an empty filter reading as "no filter" is the least surprising behavior for whatever UI eventually calls this (STORY-033), and matches how an empty search box would naturally behave.
+- **`name` uniqueness is case-insensitive via a MongoDB collation index (`{ locale: 'en', strength: 2 }`)**, not a shadow lowercase field like `User.username` uses — a Menu Item's `name` is user-facing display text ("Paneer Tikka"), so lowercasing it on write (as `username` does, where display casing doesn't matter) would corrupt what's actually shown. The collation makes only the *uniqueness check* case-insensitive, leaving the stored value exactly as entered.
+- **`isDuplicateKeyError` (the E11000-check `POST /users` already used for `USERNAME_TAKEN`) moved to `src/utils/mongo-errors.ts`** — this story is its second real caller, the same "extract once a pattern genuinely repeats" principle already applied to `roundToCurrency`/`computeInclusiveDayCount`.
+- **The search term is regex-escaped before building the `$regex` query** — a literal search for `"3.5"` or `"*"` must match that literal substring, not be interpreted as a pattern; this wasn't explicitly asked for by the AC but is basic input-safety hygiene for the first search feature in this API, not scope creep.
+- **`default_cost_per_plate` is optional at creation**, defaulting to `0` — same "money field defaults to 0" convention `venueCost`/`pax` already use; a Menu Item added ad hoc mid-Item-entry may not have an agreed cost yet.
+- **`created_via` (SRS §4.6's own field) is deliberately not implemented** — outside this story's own AC (`name`/`default_cost_per_plate` only); add it only when a later story's AC actually needs to distinguish ad-hoc-added from pre-seeded entries.
+- **New controller (`controllers/menu-items.ts`) follows the newer `AppRouteMutationImplementation`/`AppRouteQueryImplementation` typing style `controllers/events.ts` has used throughout Module 5.2**, not the older `ServerInferRequest`/`ServerInferResponses`-parameter style `controllers/users.ts`/`change-log.ts`/`auth.ts` still use — the more current convention for new files, per no documented rule mandating either but the newest, most-actively-developed file setting the de facto standard.
+- **`MenuItem` gets its own top-level Mongoose model/collection**, unlike `Session` (embedded in `Event`) — matches `directory-structure.md`'s own listing (`Event, Session, User, MenuItem, ChangeLogEntry`) and the SRS's own framing ("organization-wide, shared across all Events/Sessions/Items"), which is exactly the shape a standalone collection (not a per-Event embedded array) is for.
+
 ### STORY-031: Item schema + total_cost computation
 **Flow:** No user flow yet — extends Session with `items[]`, each either a Meal Item (`meal_name`, times, `pax`, `cost_per_plate`, `menu_items[]` refs, computed `total_cost`) or an Event Item (`event_name`, times, `venue`).
 **Acceptance Criteria:**

@@ -20,6 +20,11 @@ import {
   updateSessionBodySchema,
 } from './schemas/event.js';
 import {
+  createMenuItemBodySchema,
+  listMenuItemsQuerySchema,
+  menuItemResultSchema,
+} from './schemas/menu-item.js';
+import {
   createUserBodySchema,
   updateUserBodySchema,
   userIdParamsSchema,
@@ -201,5 +206,24 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: "Remove one of an Event's Sessions (Event Manager only)",
+  },
+  listMenuItems: {
+    method: 'GET',
+    path: '/menu-items',
+    query: listMenuItemsQuerySchema,
+    responses: {
+      200: z.array(menuItemResultSchema),
+    },
+    summary: 'Search the shared Menu Item master list (any authenticated caller)',
+  },
+  createMenuItem: {
+    method: 'POST',
+    path: '/menu-items',
+    body: createMenuItemBodySchema,
+    responses: {
+      201: menuItemResultSchema,
+      409: apiErrorSchema,
+    },
+    summary: 'Add a Menu Item to the shared master list (any authenticated caller)',
   },
 });
