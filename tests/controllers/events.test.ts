@@ -56,6 +56,19 @@ const patchPaymentAs = (token: string, id: string, body: object) =>
 const patchDocumentsChecklistAs = (token: string, id: string, body: object) =>
   request(app).patch(`/events/${id}/documents`).set('Authorization', `Bearer ${token}`).send(body);
 
+const postSessionAs = (token: string, id: string, body: object) =>
+  request(app).post(`/events/${id}/sessions`).set('Authorization', `Bearer ${token}`).send(body);
+
+const validSessionPayload = (overrides: Record<string, unknown> = {}) => ({
+  sessionType: 'Wedding',
+  venue: 'Lawn',
+  venueCost: 50000,
+  startDate: '2026-06-15',
+  endDate: '2026-06-15',
+  pax: 200,
+  ...overrides,
+});
+
 beforeAll(connectTestDb);
 afterEach(clearCollections);
 afterAll(disconnectTestDb);
@@ -1177,5 +1190,169 @@ describe('PATCH /events/:id/documents', () => {
     expect(response.body.aadharCard).toBe(true);
     expect(response.body.panCard).toBe(true);
     expect(response.body.weddingCard).toBe(true);
+  });
+});
+
+describe('POST /events/:id/sessions', () => {
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+
+    const response = await request(app)
+      .post(`/events/${created.body.id}/sessions`)
+      .send(validSessionPayload());
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(creatorToken, validPayload(manager.id));
+      const { token } = await seedCaller(role);
+
+      const response = await postSessionAs(token, created.body.id, validSessionPayload());
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await postSessionAs(token, '507f1f77bcf86cd799439011', validSessionPayload());
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' },
+    });
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await postSessionAs(token, 'not-an-id', validSessionPayload());
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('creates a Session via the STORY-026 schema, returned with its generated sub-id', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await postSessionAs(token, created.body.id, validSessionPayload());
+
+    expect(response.status).toBe(201);
+    expect(typeof response.body.id).toBe('string');
+    expect(response.body.id).not.toBe('');
+    expect(response.body).toMatchObject({
+      sessionType: 'Wedding',
+      venue: 'Lawn',
+      venueCost: 50000,
+      pax: 200,
+      sessionStatus: 'Active',
+      durationDays: 1,
+      isMultiDay: false,
+    });
+  });
+
+  it('persists the Session on the Event, readable via a subsequent GET', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await postSessionAs(token, created.body.id, validSessionPayload());
+
+    const event = await Event.findById(created.body.id);
+
+    expect(event?.sessions).toHaveLength(1);
+    expect(event?.sessions[0]?.sessionType).toBe('Wedding');
+  });
+
+  it('returns 400 with a clear message when end_date is before start_date', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({ startDate: '2026-06-15', endDate: '2026-06-14' }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(response.body.error.details).toEqual([
+      { field: 'endDate', message: 'end_date must be on or after start_date.' },
+    ]);
+  });
+
+  it('accepts a single-day session where start_date === end_date', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({ startDate: '2026-06-15', endDate: '2026-06-15' }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body.durationDays).toBe(1);
+    expect(response.body.isMultiDay).toBe(false);
+  });
+
+  it('accepts venue_cost submitted by the client as-is, without recomputing it', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({ venue: 'Poolside', venueCost: 75000 }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body.venueCost).toBe(75000);
+  });
+
+  it('rejects a session missing a required field as 400', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const payload: Record<string, unknown> = validSessionPayload();
+    delete payload.venue;
+
+    const response = await postSessionAs(token, created.body.id, payload);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('writes no Change Log Entry — adding a Session is a creation, not a field edit', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    await postSessionAs(token, created.body.id, validSessionPayload());
+
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries).toHaveLength(0);
+  });
+
+  it("allows adding a Session to an Event whose own status is Cancelled (this story's own edge case: allowed, not blocked)", async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id, { status: EventStatus.Cancelled }));
+
+    const response = await postSessionAs(token, created.body.id, validSessionPayload());
+
+    expect(response.status).toBe(201);
   });
 });

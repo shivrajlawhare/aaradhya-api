@@ -6,10 +6,12 @@ import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/
 import {
   accommodationResultSchema,
   createEventBodySchema,
+  createSessionBodySchema,
   documentsChecklistResultSchema,
   eventIdParamsSchema,
   eventResultSchema,
   paymentResultSchema,
+  sessionResultSchema,
   updateAccommodationBodySchema,
   updateDocumentsChecklistBodySchema,
   updateEventBodySchema,
@@ -163,5 +165,17 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: "Toggle items on an Event's Documents Checklist (Event Manager only)",
+  },
+  createSession: {
+    method: 'POST',
+    path: '/events/:id/sessions',
+    pathParams: eventIdParamsSchema,
+    body: createSessionBodySchema,
+    responses: {
+      201: sessionResultSchema,
+      400: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: 'Add a Session to an Event (Event Manager only)',
   },
 });

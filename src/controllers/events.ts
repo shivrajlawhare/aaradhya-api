@@ -1,4 +1,4 @@
-import { Error as MongooseError } from 'mongoose';
+import { Error as MongooseError, type Types } from 'mongoose';
 import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from '@ts-rest/express';
 import type { ServerInferRequest, ServerInferResponses } from '@ts-rest/core';
 import type { contract } from '../contract/index.js';
@@ -12,6 +12,8 @@ import {
   type EventDocument,
   type PaymentAttributes,
   type RoomLineAttributes,
+  type SessionAttributes,
+  type SessionSetupAttributes,
 } from '../models/event.js';
 import {
   computeRoomLineTotalInclGst,
@@ -21,6 +23,7 @@ import {
 } from '../services/accommodation.js';
 import { logChange } from '../services/change-log.js';
 import { computeBalance } from '../services/payment.js';
+import { computeDurationDays, computeIsMultiDay } from '../services/session.js';
 
 type CreateEventResponse = ServerInferResponses<typeof contract.createEvent>;
 type GetEventResponse = ServerInferResponses<typeof contract.getEvent>;
@@ -29,6 +32,7 @@ type UpdateEventBody = ServerInferRequest<typeof contract.updateEvent>['body'];
 type UpdateEventAccommodationBody = ServerInferRequest<typeof contract.updateEventAccommodation>['body'];
 type UpdateEventPaymentBody = ServerInferRequest<typeof contract.updateEventPayment>['body'];
 type UpdateDocumentsChecklistBody = ServerInferRequest<typeof contract.updateDocumentsChecklist>['body'];
+type CreateSessionResponse = ServerInferResponses<typeof contract.createSession>;
 
 // Narrow (single-member), not the whole per-route union, so the same
 // constant can be returned from any handler whose response union happens to
@@ -582,4 +586,119 @@ export const updateDocumentsChecklist: AppRouteMutationImplementation<
   );
 
   return { status: 200, body: toPublicDocumentsChecklist(updated.documentsChecklist) };
+};
+
+const invalidSessionDateRange: Extract<CreateSessionResponse, { status: 400 }> = {
+  status: 400,
+  body: {
+    error: {
+      code: 'VALIDATION_ERROR',
+      message: 'Invalid request body.',
+      details: [{ field: 'endDate', message: 'end_date must be on or after start_date.' }],
+    },
+  },
+};
+
+// sessionSchema's own field-level validator (src/models/event.ts) is what
+// actually rejects end_date < start_date — this just recognises that
+// specific failure (by its path within the sessions array) so it can be
+// reshaped into the same VALIDATION_ERROR envelope every other bad-body
+// case returns, matching isInvalidEventManagerError's own convention above.
+const isInvalidSessionDateRangeError = (error: unknown): boolean =>
+  error instanceof MongooseError.ValidationError &&
+  Object.keys(error.errors).some((path) => path.endsWith('.endDate'));
+
+const toPublicSessionSetup = (setup: SessionSetupAttributes) => ({
+  seating: setup.seating ?? null,
+  tableCount: setup.tableCount,
+  chairCount: setup.chairCount,
+  stage: setup.stage,
+  buffet: setup.buffet,
+  registrationDesk: setup.registrationDesk,
+  vipSeating: setup.vipSeating,
+  brideGroomSeating: setup.brideGroomSeating,
+  notes: setup.notes ?? null,
+});
+
+// durationDays/isMultiDay reuse STORY-026's own computeDurationDays/
+// computeIsMultiDay — never stored, always freshly computed from whatever
+// startDate/endDate are currently on the Session, same "derived, never
+// trusted from the client" convention totalDays (accommodation) and
+// balance (payment) already established. Takes `_id` (not `.id`) — a
+// Types.DocumentArray's own subdocument type only declares `_id` typed
+// (Types.ObjectId), unlike a top-level HydratedDocument which also gets a
+// typed `.id` string virtual.
+const toPublicSession = (session: SessionAttributes & { _id: Types.ObjectId }) => ({
+  id: session._id.toString(),
+  sessionType: session.sessionType,
+  venue: session.venue,
+  venueCost: session.venueCost,
+  startDate: session.startDate,
+  endDate: session.endDate,
+  startTime: session.startTime ?? null,
+  endTime: session.endTime ?? null,
+  pax: session.pax,
+  sessionStatus: session.sessionStatus,
+  durationDays: computeDurationDays(session),
+  isMultiDay: computeIsMultiDay(session),
+  setup: toPublicSessionSetup(session.setup),
+});
+
+// No session_status accepted at creation — a newly added Session always
+// starts Active (sessionSchema's own default), matching this story's Flow
+// line (type/venue/date range/times/pax/setup, not status).
+// venue_cost is taken as-is from the body when supplied (this story's own
+// AC: this endpoint doesn't own the venue→cost lookup, the client does) —
+// falls back to sessionSchema's own default (0) when omitted, exactly like
+// pax/startTime/endTime/setup.
+// Adding a Session to an Event whose own status is Cancelled is allowed,
+// not blocked — no other write endpoint on Event (updateEvent,
+// updateEventAccommodation, updateEventPayment, updateDocumentsChecklist)
+// checks the Event's current status before writing, and FR-EVT-6 already
+// establishes Cancelled as not a locked/terminal state (an Event Manager
+// can move status away from it again). Consistent with that existing
+// behavior, not a new exception.
+// No Change Log Entry is written here — adding a Session is a creation,
+// not a field-level edit, the same "creation isn't logged, only edits are"
+// precedent createEvent already established (it never calls logChange
+// either).
+export const createSession: AppRouteMutationImplementation<typeof contract.createSession> = async ({
+  params,
+  body,
+  req,
+}) => {
+  if (!req.user) {
+    // Unreachable — eventManagerOnly (router.ts) runs authenticate before
+    // this handler ever does; guarded instead of asserted past.
+    throw new Error('createSession handler ran without an authenticated user.');
+  }
+
+  const existing = await Event.findById(params.id);
+  if (!existing) {
+    return eventNotFound;
+  }
+
+  const session = existing.sessions.create({
+    sessionType: body.sessionType,
+    venue: body.venue,
+    venueCost: body.venueCost,
+    startDate: body.startDate,
+    endDate: body.endDate,
+    startTime: body.startTime,
+    endTime: body.endTime,
+    pax: body.pax,
+    setup: body.setup,
+  });
+  existing.sessions.push(session);
+
+  try {
+    await existing.save();
+  } catch (error) {
+    if (isInvalidSessionDateRangeError(error)) {
+      return invalidSessionDateRange;
+    }
+    throw error;
+  }
+
+  return { status: 201, body: toPublicSession(session) };
 };

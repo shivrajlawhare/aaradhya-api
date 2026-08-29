@@ -326,6 +326,59 @@ request shape, not which credential was wrong.
   for `accommodation` (STORY-020) and `payment` (STORY-023); see the
   `GET /events, GET /events/:id` section above.
 
+### POST /events/:id/sessions — SETTLED (STORY-027)
+
+- Gated by `requireRole(Role.EventManager)`, same as the other write routes
+  on Event.
+- `201`, not `200` — a real creation (a new array element with its own
+  generated sub-id), same status code `POST /events` already uses, unlike
+  the `200`s every PATCH sub-resource route (`accommodation`/`payment`/
+  `documents`) returns for editing something that already exists.
+- Response is the created Session itself (`{ id, sessionType, venue,
+  venueCost, startDate, endDate, startTime, endTime, pax, sessionStatus,
+  durationDays, isMultiDay, setup }`), not the parent Event — same
+  sub-resource-route convention every other Event sub-resource route
+  already established. `id` is the Session's own generated sub-id — the
+  first time any Event sub-resource route has needed to expose one
+  (`clientContacts`/`roomLines` rows have never needed it).
+  `durationDays`/`isMultiDay` are derived (STORY-026's
+  `computeDurationDays`/`computeIsMultiDay`) and ride along in the response
+  exactly the way `totalDays`/`totalInclGst`
+  (`PATCH /events/:id/accommodation`) and `balance`
+  (`PATCH /events/:id/payment`) already do for their own sub-resources —
+  never accepted as input.
+- `session_status` is **not** accepted in the request body at all — a
+  newly added Session always starts `Active` (`sessionSchema`'s own
+  default, STORY-026). Cancelling one is a later story's job (an edit, not
+  part of adding).
+- `end_date < start_date` is a `400 VALIDATION_ERROR` with
+  `details: [{ field: "endDate", ... }]` — this endpoint doesn't
+  re-implement that check; `sessionSchema`'s own field-level validator
+  (STORY-026) is what actually rejects it on `.save()`, confirming that
+  validation is genuinely reachable through this endpoint, not just
+  exercised in isolated model-level tests.
+- `venue_cost` is accepted as-is from the request body when supplied —
+  this endpoint does not own the venue→cost lookup (that's a client-side
+  concern); omitted, it falls back to `sessionSchema`'s own default (`0`),
+  same as `pax`/`start_time`/`end_time`/`setup`.
+- **Adding a Session to an Event whose own `status` is `Cancelled` is
+  allowed, not blocked** (this story's own edge case). No other write
+  route on Event (`PATCH /events/:id`, `/accommodation`, `/payment`,
+  `/documents`) checks the parent Event's current `status` before writing,
+  and FR-EVT-6 already establishes `Cancelled` as not a locked/terminal
+  state (an Event Manager can move `status` away from it again) — this is
+  consistent with that existing behavior, not a new exception. Documented
+  here explicitly because it affects STORY-029's form (no "Event is
+  Cancelled" guard needed on the Add Session UI).
+- **No Change Log Entry is written** — adding a Session is a creation, not
+  a field-level edit, the same "creation isn't logged" precedent
+  `POST /events` already established (it never calls `logChange` either).
+- `GET /events/:id` does **not** yet include `sessions` in its response —
+  no story has needed to read the list yet. Expect the by-now-familiar
+  retroactive-addition pattern (`accommodation` → STORY-020, `payment` →
+  STORY-023, `documentsChecklist` → STORY-025) to recur a fourth time once
+  a UI story needs to display current Session data.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

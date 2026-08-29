@@ -521,6 +521,15 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** Adding a Session to an Event that is `Cancelled` at the Event level (decide: blocked or allowed — document the choice, since it affects STORY-029's form).
 
+**Decisions (v1):**
+- **Adding a Session to a `Cancelled` Event is allowed, not blocked.** No other write route on Event checks the parent's current `status` before writing (`PATCH /events/:id`, `/accommodation`, `/payment`, `/documents` all ignore it entirely), and FR-EVT-6 already treats `Cancelled` as reversible, not a locked terminal state. Consistent with existing behavior rather than a fresh judgment call. STORY-029's Add Session form needs no "Event is Cancelled" guard as a result.
+- **`session_status` is not accepted in the create body at all** — this story's own Flow line lists exactly type/venue/date range/times/pax/setup as what an Event Manager chooses when adding a Session, not status; a new Session always starts `Active` (`sessionSchema`'s own STORY-026 default).
+- **`durationDays`/`isMultiDay` ride along in the response**, reusing STORY-026's own pure functions, even though no AC bullet explicitly names them — this follows the same "derived fields always accompany their sub-resource's response" convention already established for `totalDays`/`totalInclGst` (accommodation) and `balance` (payment); STORY-026 built those functions specifically so a consumer like this endpoint could use them.
+- **`201`, matching `POST /events`** — a genuine creation, not a `200` like the PATCH sub-resource routes.
+- **No Change Log Entry is written** — same "creation isn't logged, only edits are" precedent `POST /events` (the top-level Event create) already established; it never calls `logChange` either.
+- **The Session's generated sub-id is the first sub-id any Event sub-resource route has ever needed to expose** — `clientContacts`/`roomLines` rows have never returned theirs. This required retyping `EventAttributes.sessions` from a plain `SessionAttributes[]` to `Types.DocumentArray<SessionAttributes>` (`src/models/event.ts`) so `.create()`/subdocument `_id` access type-check — `clientContacts`/`roomLines` stay plain arrays since nothing has ever needed their own typed subdocument methods.
+- **`end_date < start_date` is caught as a Mongoose `ValidationError` on `.save()` and reshaped into a `400 VALIDATION_ERROR`** via a narrow `isInvalidSessionDateRangeError` check (looking for an `.endDate`-suffixed error path), the same pattern `isInvalidEventManagerError` already established for `POST /events` — this endpoint doesn't re-implement the range check itself, it just translates the schema's own rejection into a clean response, which is exactly what this story's own AC is confirming is reachable.
+
 ### STORY-028: PATCH/DELETE /events/:id/sessions/:sid
 **Flow:** An Event Manager edits a Session's fields (including its date range) or removes it entirely.
 **Acceptance Criteria:**

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ClientContactRole, EventStatus } from '../../models/event.js';
+import { ClientContactRole, EventStatus, SeatingArrangement, SessionStatus } from '../../models/event.js';
 import { objectIdSchema } from './common.js';
 
 // One boolean field per fixed key, hand-written (not built from
@@ -132,6 +132,78 @@ export const paymentResultSchema = z.object({
   advancePaidDate: z.date().nullable(),
   paymentMode: z.string().nullable(),
   balance: z.number(),
+});
+
+// setup is optional as a whole (STORY-027: an Event Manager may add a
+// Session without touching setup at all yet) and every field within it is
+// optional too — a caller sends only what it's chosen so far, the rest fall
+// back to sessionSetupSchema's own field-level defaults (STORY-026).
+const sessionSetupInputSchema = z.object({
+  seating: z.nativeEnum(SeatingArrangement).optional(),
+  tableCount: z.number().min(0).optional(),
+  chairCount: z.number().min(0).optional(),
+  stage: z.boolean().optional(),
+  buffet: z.boolean().optional(),
+  registrationDesk: z.boolean().optional(),
+  vipSeating: z.boolean().optional(),
+  brideGroomSeating: z.boolean().optional(),
+  notes: z.string().trim().min(1).optional(),
+});
+
+// sessionType/venue required (this story's own Flow: "choosing type,
+// venue... "); venueCost/pax/startTime/endTime/setup are optional, falling
+// back to sessionSchema's own field-level defaults (STORY-026) when
+// omitted. No session_status here — this story's own Flow line never lists
+// it among what an Event Manager chooses when adding a Session; it always
+// starts Active (STORY-026's schema default), same "don't implement beyond
+// the current story's AC" restraint applied elsewhere. z.coerce.date()
+// accepts the ISO string a JSON body actually carries, same convention
+// updateAccommodationBodySchema already uses.
+export const createSessionBodySchema = z.object({
+  sessionType: z.string().trim().min(1),
+  venue: z.string().trim().min(1),
+  venueCost: z.number().min(0).optional(),
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+  startTime: z.string().trim().min(1).optional(),
+  endTime: z.string().trim().min(1).optional(),
+  pax: z.number().min(0).optional(),
+  setup: sessionSetupInputSchema.optional(),
+});
+
+const sessionSetupResultSchema = z.object({
+  seating: z.nativeEnum(SeatingArrangement).nullable(),
+  tableCount: z.number(),
+  chairCount: z.number(),
+  stage: z.boolean(),
+  buffet: z.boolean(),
+  registrationDesk: z.boolean(),
+  vipSeating: z.boolean(),
+  brideGroomSeating: z.boolean(),
+  notes: z.string().nullable(),
+});
+
+// durationDays/isMultiDay are derived (STORY-026's computeDurationDays/
+// computeIsMultiDay) — never accepted as input, always present on output,
+// same "derived fields ride along with every sub-resource response"
+// convention totalDays/totalInclGst (accommodation) and balance (payment)
+// already established. startTime/endTime are nullable, not just optional,
+// matching accommodation's checkIn/checkOut convention for "genuinely
+// unset yet".
+export const sessionResultSchema = z.object({
+  id: z.string(),
+  sessionType: z.string(),
+  venue: z.string(),
+  venueCost: z.number(),
+  startDate: z.date(),
+  endDate: z.date(),
+  startTime: z.string().nullable(),
+  endTime: z.string().nullable(),
+  pax: z.number(),
+  sessionStatus: z.nativeEnum(SessionStatus),
+  durationDays: z.number(),
+  isMultiDay: z.boolean(),
+  setup: sessionSetupResultSchema,
 });
 
 // The public Event shape — everything STORY-011's schema persists, plus the

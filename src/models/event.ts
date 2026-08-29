@@ -169,7 +169,11 @@ export interface EventAttributes {
   accommodation?: AccommodationAttributes;
   payment: PaymentAttributes;
   documentsChecklist: DocumentsChecklistAttributes;
-  sessions: SessionAttributes[];
+  // Typed as a DocumentArray (not plain SessionAttributes[], unlike
+  // clientContacts/roomLines above) — STORY-027 is the first place a
+  // Session's own generated sub-id needs to come back out, which needs
+  // `.create()`/`.id()`'s typed subdocument behavior, not just push/read.
+  sessions: Types.DocumentArray<SessionAttributes>;
   createdBy: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;

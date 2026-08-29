@@ -4,6 +4,7 @@ import { login } from './controllers/auth.js';
 import { listChangeLog } from './controllers/change-log.js';
 import {
   createEvent,
+  createSession,
   getEvent,
   listEvents,
   updateDocumentsChecklist,
@@ -69,5 +70,9 @@ export const router = server.router(contract, {
   updateDocumentsChecklist: {
     middleware: eventManagerOnly,
     handler: updateDocumentsChecklist,
+  },
+  createSession: {
+    middleware: eventManagerOnly,
+    handler: createSession,
   },
 });
