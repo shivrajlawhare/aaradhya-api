@@ -655,9 +655,10 @@ describe('Event model', () => {
       eventManager: manager.id,
       createdBy: manager.id,
       sessions: [
-        validSession({
+        {
+          ...validSession(),
           items: [{ type: ItemType.Meal, mealName: 'Lunch', pax: 100, costPerPlate: 500, menuItems: [] }],
-        }),
+        },
       ],
     });
 
@@ -678,9 +679,10 @@ describe('Event model', () => {
       eventManager: manager.id,
       createdBy: manager.id,
       sessions: [
-        validSession({
+        {
+          ...validSession(),
           items: [{ type: ItemType.Event, eventName: 'Muhurta', venue: 'Lawn', menuItems: [] }],
-        }),
+        },
       ],
     });
 
@@ -700,9 +702,10 @@ describe('Event model', () => {
       eventManager: manager.id,
       createdBy: manager.id,
       sessions: [
-        validSession({
+        {
+          ...validSession(),
           items: [{ type: ItemType.Meal, mealName: 'Lunch', pax: 0, costPerPlate: 500, menuItems: [] }],
-        }),
+        },
       ],
     });
 
@@ -767,7 +770,7 @@ describe('Event model', () => {
       eventManager: manager.id,
       createdBy: manager.id,
       sessions: [
-        validSession({ items: [{ type: ItemType.Event, eventName: 'Muhurta', venue: 'Lawn', menuItems: [] }] }),
+        { ...validSession(), items: [{ type: ItemType.Event, eventName: 'Muhurta', venue: 'Lawn', menuItems: [] }] },
       ],
     });
 

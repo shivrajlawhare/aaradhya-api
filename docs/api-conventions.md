@@ -466,6 +466,68 @@ request shape, not which credential was wrong.
   only asks for `name`/`default_cost_per_plate`; add it only if a later
   story's AC actually needs to distinguish the two.
 
+### POST/PATCH/DELETE /events/:id/sessions/:sid/items — SETTLED (STORY-032)
+
+- Gated by `requireRole(Role.EventManager)`, same as every other write
+  route on Event. Path carries three ids — `:id` (Event), `:sid`
+  (Session), `:iid` (Item, this story's own generated sub-id) — each
+  resolved in order, with a distinct 404 per level
+  (`EVENT_NOT_FOUND`/`SESSION_NOT_FOUND`/`ITEM_NOT_FOUND`), same layered
+  404 convention `PATCH/DELETE /events/:id/sessions/:sid` already
+  established.
+- `POST` body is a Zod **discriminated union** on `type`
+  (`mealItemBodySchema` vs `eventItemBodySchema`) — this is what actually
+  implements "requires the correct field set for whichever type is set"
+  at the request-validation layer, ahead of and independent from
+  `itemSchema`'s own per-field `required` functions (STORY-031) doing the
+  identical enforcement at the persistence layer. `PATCH` stays a flat
+  optional-everything shape (no `type` field at all — switching an Item
+  between Meal/Event isn't offered).
+- **`total_cost` is never accepted as input on either route** — the
+  schema simply doesn't declare the key, so a client-submitted value is
+  silently ignored (this story's own AC); the response always reflects
+  `computeTotalCost` (STORY-031) freshly run against whatever
+  `pax`/`cost_per_plate` are currently stored. It reads `null` for an
+  Event Item, where the concept doesn't apply.
+- **`menuItems` accepts a mix of `{ id }` and `{ name }` entries** — an
+  `{ id }` must already reference a real Menu Item (`400
+  VALIDATION_ERROR`, not a silent no-op or partial write, if it doesn't:
+  this story's own edge case); a `{ name }` is **found-or-created**
+  (STORY-030's own case-insensitive uniqueness): the handler attempts
+  `MenuItem.create({ name })` first and, only if that collides
+  (`isDuplicateKeyError`), re-queries for the existing case-insensitive
+  match — leaning on the database's own unique index as the source of
+  truth rather than a check-then-create sequence, which would race two
+  concurrent callers adding the same brand-new name at once. This is the
+  concrete mechanism behind this story's own AC: "adding a Menu Item that
+  doesn't yet exist... creates it via STORY-030's POST as part of this
+  flow, then references it."
+- `PATCH` recomputes `total_cost` automatically (same "always freshly
+  derived" rule above) whenever `pax`/`cost_per_plate` change, and writes
+  one Change Log Entry per changed field, `field` formatted as
+  `sessions[<session_type>].items[<item_identity>].<field>` — one layer
+  deeper than `PATCH /events/:id/sessions/:sid`'s own
+  `sessions[<session_type>].<field>` convention, `item_identity` being
+  `mealName` (falling back to `eventName`), both identities captured
+  **before** this request's own edits apply, same "old identity, not
+  new" rule already established. `menuItems` is diffed and logged as one
+  whole field (its old/new value being the full array of resolved ids as
+  strings), the same "compound sub-value is one field" convention
+  `roomLines`/`setup` already established.
+- `DELETE` writes no Change Log Entry, same "creation/deletion isn't
+  logged, only edits are" precedent applied symmetrically at every level
+  so far (`POST /events`, `POST /events/:id/sessions`,
+  `DELETE /events/:id/sessions/:sid`).
+- `Session.items` is now typed `Types.DocumentArray<ItemAttributes>` (was
+  a plain array when STORY-031 first added the field) — this story is the
+  first place an Item's own generated sub-id needs to come back out, the
+  same reason `Event.sessions` was retyped in STORY-027.
+- `GET /events/:id` does **not** yet include `sessions[].items` in its
+  response — no story has needed to read it yet. Expect the by-now-
+  familiar retroactive-addition pattern to recur a fifth time (this time
+  nested inside `sessions`, not a new top-level field) once a UI story
+  needs to display current Item data.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

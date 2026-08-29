@@ -614,6 +614,16 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** Referencing a `menu_items[]` id that doesn't exist (400, not a silent no-op).
 
+**Decisions (v1):**
+- **`menuItems` accepts a mix of `{ id }` (must already exist) and `{ name }` (found-or-created) entries** — this is the concrete reading of "search existing Menu Items or add new inline" (SRS §4.5) plus this story's own two, seemingly-different-sounding requirements: AC bullet 2 (a not-yet-existing name gets created and referenced) and the edge case (a nonexistent id is a 400, not silently created or skipped). One input shape, two resolution rules, both driven by whichever key the caller sent.
+- **Found-or-create leans on the database's own unique index, not a check-then-create sequence** — `MenuItem.create({ name })` is attempted first; only a caught `isDuplicateKeyError` triggers a re-query for the existing case-insensitive match. A naive "search first, create if missing" would race two concurrent callers both adding the same brand-new name.
+- **`POST`'s body is a Zod discriminated union on `type`**, not a flat optional-everything shape — cleaner than `itemSchema`'s own per-field `required` functions (STORY-031) for expressing "this bullet's" AC at the request-validation layer specifically, and this repo's first use of `z.discriminatedUnion` (worth remembering as the idiom for "the field set depends on a sibling enum field" at the *contract* layer, distinct from STORY-031's Mongoose-level answer to the same question at the *persistence* layer).
+- **`PATCH` offers no `type` field** — converting a Meal Item into an Event Item (or back) isn't something this story's AC asks for.
+- **The Change Log field-identity convention extends one layer deeper**: `sessions[<session_type>].items[<item_identity>].<field>`, `item_identity` being `mealName` (falling back to `eventName`), both captured before the request's own edits — directly extending STORY-028's `sessions[<session_type>].<field>` pattern rather than inventing a new one.
+- **`Session.items` retyped to `Types.DocumentArray<ItemAttributes>`** — flagged as expected in STORY-031's own Decisions block; this is that recurrence, for the same reason (`.create()`/typed sub-id access) `Event.sessions` needed it in STORY-027.
+- **`escapeRegExp` moved to `src/utils/regex.ts`** — this story's own Menu Item find-or-create needed the identical escaping `GET /menu-items?search=` (STORY-030) already used, its second real caller.
+- **No Change Log Entry on `POST`/`DELETE`**, only `PATCH` — creation/deletion isn't a field-level edit, applied symmetrically at this third nesting level the same way it already was for `POST /events`, `POST /events/:id/sessions`, and `DELETE /events/:id/sessions/:sid`.
+
 ### STORY-033: Items UI within Session form
 **Flow:** Within the Session form (STORY-029), an Event Manager adds Meal/Event item cards, searching the shared Menu Item list and adding new items inline when needed.
 **Acceptance Criteria:**

@@ -4,7 +4,9 @@ import { login } from './controllers/auth.js';
 import { listChangeLog } from './controllers/change-log.js';
 import {
   createEvent,
+  createItem,
   createSession,
+  deleteItem,
   deleteSession,
   getEvent,
   listEvents,
@@ -12,6 +14,7 @@ import {
   updateEvent,
   updateEventAccommodation,
   updateEventPayment,
+  updateItem,
   updateSession,
 } from './controllers/events.js';
 import { checkHealth } from './controllers/health.js';
@@ -93,5 +96,17 @@ export const router = server.router(contract, {
   createMenuItem: {
     middleware: authenticatedOnly,
     handler: createMenuItem,
+  },
+  createItem: {
+    middleware: eventManagerOnly,
+    handler: createItem,
+  },
+  updateItem: {
+    middleware: eventManagerOnly,
+    handler: updateItem,
+  },
+  deleteItem: {
+    middleware: eventManagerOnly,
+    handler: deleteItem,
   },
 });

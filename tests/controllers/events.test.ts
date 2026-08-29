@@ -75,6 +75,33 @@ const validSessionPayload = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const postItemAs = (token: string, id: string, sid: string, body: object) =>
+  request(app).post(`/events/${id}/sessions/${sid}/items`).set('Authorization', `Bearer ${token}`).send(body);
+
+const patchItemAs = (token: string, id: string, sid: string, iid: string, body: object) =>
+  request(app).patch(`/events/${id}/sessions/${sid}/items/${iid}`).set('Authorization', `Bearer ${token}`).send(body);
+
+const deleteItemAs = (token: string, id: string, sid: string, iid: string) =>
+  request(app).delete(`/events/${id}/sessions/${sid}/items/${iid}`).set('Authorization', `Bearer ${token}`);
+
+const listMenuItemsAs = (token: string, search: string) =>
+  request(app).get('/menu-items').query({ search }).set('Authorization', `Bearer ${token}`);
+
+const validMealItemPayload = (overrides: Record<string, unknown> = {}) => ({
+  type: 'Meal',
+  mealName: 'Lunch',
+  pax: 100,
+  costPerPlate: 500,
+  ...overrides,
+});
+
+const validEventItemPayload = (overrides: Record<string, unknown> = {}) => ({
+  type: 'Event',
+  eventName: 'Muhurta',
+  venue: 'Lawn',
+  ...overrides,
+});
+
 beforeAll(connectTestDb);
 afterEach(clearCollections);
 afterAll(disconnectTestDb);
@@ -1635,6 +1662,392 @@ describe('DELETE /events/:id/sessions/:sid', () => {
     const { eventId, sessionId } = await seedEventWithSession(token);
 
     await deleteSessionAs(token, eventId, sessionId);
+
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: eventId });
+    expect(entries).toHaveLength(0);
+  });
+});
+
+describe('POST /events/:id/sessions/:sid/items', () => {
+  const seedEventWithSession = async (token: string) => {
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload());
+    return { eventId: created.body.id, sessionId: session.body.id };
+  };
+
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(creatorToken);
+
+    const response = await request(app)
+      .post(`/events/${eventId}/sessions/${sessionId}/items`)
+      .send(validMealItemPayload());
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const { eventId, sessionId } = await seedEventWithSession(creatorToken);
+      const { token } = await seedCaller(role);
+
+      const response = await postItemAs(token, eventId, sessionId, validMealItemPayload());
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent event id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await postItemAs(
+      token,
+      '507f1f77bcf86cd799439011',
+      '507f1f77bcf86cd799439012',
+      validMealItemPayload(),
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' },
+    });
+  });
+
+  it('returns 404 for a well-formed but nonexistent session id', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await postItemAs(token, created.body.id, '507f1f77bcf86cd799439012', validMealItemPayload());
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'SESSION_NOT_FOUND', message: 'No Session with that id on this Event.' },
+    });
+  });
+
+  it('returns 400 for a malformed session id', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await postItemAs(token, created.body.id, 'not-an-id', validMealItemPayload());
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('creates a Meal Item, ignoring a client-submitted total_cost', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    const response = await postItemAs(
+      token,
+      eventId,
+      sessionId,
+      validMealItemPayload({ totalCost: 999999 }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(typeof response.body.id).toBe('string');
+    expect(response.body).toMatchObject({
+      type: 'Meal',
+      mealName: 'Lunch',
+      pax: 100,
+      costPerPlate: 500,
+      totalCost: 50000,
+    });
+  });
+
+  it('creates an Event Item, with pax/cost_per_plate/total_cost reading null', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    const response = await postItemAs(token, eventId, sessionId, validEventItemPayload());
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      type: 'Event',
+      eventName: 'Muhurta',
+      venue: 'Lawn',
+      pax: null,
+      costPerPlate: null,
+      totalCost: null,
+    });
+  });
+
+  it('returns 400 for an Event Item missing venue', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+    const payload: Record<string, unknown> = validEventItemPayload();
+    delete payload.venue;
+
+    const response = await postItemAs(token, eventId, sessionId, payload);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('adding a not-yet-existing Menu Item by name creates it, findable via GET /menu-items?search=', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    const response = await postItemAs(
+      token,
+      eventId,
+      sessionId,
+      validMealItemPayload({ menuItems: [{ name: 'Paneer Tikka' }] }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body.menuItems).toHaveLength(1);
+
+    const search = await listMenuItemsAs(token, 'Paneer');
+    expect(search.body).toHaveLength(1);
+    expect(search.body[0]?.name).toBe('Paneer Tikka');
+    expect(search.body[0]?.id).toBe(response.body.menuItems[0]);
+  });
+
+  it('adding an already-existing Menu Item by name reuses it, not a duplicate', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+    const existing = await request(app)
+      .post('/menu-items')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Paneer Tikka' });
+
+    const response = await postItemAs(
+      token,
+      eventId,
+      sessionId,
+      validMealItemPayload({ menuItems: [{ name: 'paneer tikka' }] }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body.menuItems).toEqual([existing.body.id]);
+    const search = await listMenuItemsAs(token, 'paneer');
+    expect(search.body).toHaveLength(1);
+  });
+
+  it('adding a Menu Item by an existing id references it directly', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+    const existing = await request(app)
+      .post('/menu-items')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Gulab Jamun' });
+
+    const response = await postItemAs(
+      token,
+      eventId,
+      sessionId,
+      validMealItemPayload({ menuItems: [{ id: existing.body.id }] }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body.menuItems).toEqual([existing.body.id]);
+  });
+
+  it('returns 400, not a silent no-op, when a menuItems id does not exist', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    const response = await postItemAs(
+      token,
+      eventId,
+      sessionId,
+      validMealItemPayload({ menuItems: [{ id: '507f1f77bcf86cd799439011' }] }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    const event = await Event.findById(eventId);
+    expect(event?.sessions[0]?.items).toHaveLength(0);
+  });
+
+  it('writes no Change Log Entry — adding an Item is a creation, not a field edit', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    await postItemAs(token, eventId, sessionId, validMealItemPayload());
+
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: eventId });
+    expect(entries).toHaveLength(0);
+  });
+});
+
+describe('PATCH /events/:id/sessions/:sid/items/:iid', () => {
+  const seedEventWithItem = async (token: string, itemOverrides: Record<string, unknown> = {}) => {
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload());
+    const item = await postItemAs(
+      token,
+      created.body.id,
+      session.body.id,
+      validMealItemPayload(itemOverrides),
+    );
+    return { eventId: created.body.id, sessionId: session.body.id, itemId: item.body.id };
+  };
+
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const { eventId, sessionId, itemId } = await seedEventWithItem(creatorToken);
+
+    const response = await request(app)
+      .patch(`/events/${eventId}/sessions/${sessionId}/items/${itemId}`)
+      .send({ pax: 150 });
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const { eventId, sessionId, itemId } = await seedEventWithItem(creatorToken);
+      const { token } = await seedCaller(role);
+
+      const response = await patchItemAs(token, eventId, sessionId, itemId, { pax: 150 });
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent item id', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload());
+
+    const response = await patchItemAs(
+      token,
+      created.body.id,
+      session.body.id,
+      '507f1f77bcf86cd799439012',
+      { pax: 150 },
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'ITEM_NOT_FOUND', message: 'No Item with that id on this Session.' },
+    });
+  });
+
+  it('recomputes total_cost when pax or cost_per_plate change', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId, itemId } = await seedEventWithItem(token, { pax: 100, costPerPlate: 500 });
+
+    const response = await patchItemAs(token, eventId, sessionId, itemId, { pax: 120, costPerPlate: 550 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.pax).toBe(120);
+    expect(response.body.costPerPlate).toBe(550);
+    expect(response.body.totalCost).toBe(66000);
+  });
+
+  it('writes one Change Log Entry per changed field, scoped with the session and item identity', async () => {
+    const { caller, token } = await seedCaller();
+    const { eventId, sessionId, itemId } = await seedEventWithItem(token, { mealName: 'Lunch' });
+
+    const response = await patchItemAs(token, eventId, sessionId, itemId, { pax: 150, costPerPlate: 600 });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: eventId });
+    expect(entries.map((entry) => entry.field).sort()).toEqual([
+      'sessions[Wedding].items[Lunch].costPerPlate',
+      'sessions[Wedding].items[Lunch].pax',
+    ]);
+    for (const entry of entries) {
+      expect(entry.changedBy).toBe(caller.id);
+    }
+  });
+
+  it('writes no Change Log Entry for a PATCH that resubmits the same values', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId, itemId } = await seedEventWithItem(token, { pax: 100, costPerPlate: 500 });
+
+    const response = await patchItemAs(token, eventId, sessionId, itemId, { pax: 100, costPerPlate: 500 });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: eventId });
+    expect(entries).toHaveLength(0);
+  });
+
+  it('returns 400, not a silent no-op, when patching menuItems with an id that does not exist', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId, itemId } = await seedEventWithItem(token);
+
+    const response = await patchItemAs(token, eventId, sessionId, itemId, {
+      menuItems: [{ id: '507f1f77bcf86cd799439011' }],
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('DELETE /events/:id/sessions/:sid/items/:iid', () => {
+  const seedEventWithItem = async (token: string) => {
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload());
+    const item = await postItemAs(token, created.body.id, session.body.id, validMealItemPayload());
+    return { eventId: created.body.id, sessionId: session.body.id, itemId: item.body.id };
+  };
+
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const { eventId, sessionId, itemId } = await seedEventWithItem(creatorToken);
+
+    const response = await request(app).delete(`/events/${eventId}/sessions/${sessionId}/items/${itemId}`);
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const { eventId, sessionId, itemId } = await seedEventWithItem(creatorToken);
+      const { token } = await seedCaller(role);
+
+      const response = await deleteItemAs(token, eventId, sessionId, itemId);
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent item id', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload());
+
+    const response = await deleteItemAs(token, created.body.id, session.body.id, '507f1f77bcf86cd799439012');
+
+    expect(response.status).toBe(404);
+  });
+
+  it("removes the item from the Session's item list — a subsequent read no longer includes it", async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId, itemId } = await seedEventWithItem(token);
+
+    const response = await deleteItemAs(token, eventId, sessionId, itemId);
+
+    expect(response.status).toBe(204);
+    const event = await Event.findById(eventId);
+    expect(event?.sessions[0]?.items).toHaveLength(0);
+  });
+
+  it('writes no Change Log Entry — deleting an Item is not a field edit', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId, itemId } = await seedEventWithItem(token);
+
+    await deleteItemAs(token, eventId, sessionId, itemId);
 
     const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: eventId });
     expect(entries).toHaveLength(0);

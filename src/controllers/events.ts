@@ -1,4 +1,4 @@
-import { Error as MongooseError } from 'mongoose';
+import { Error as MongooseError, Types } from 'mongoose';
 import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from '@ts-rest/express';
 import type { ServerInferRequest, ServerInferResponses } from '@ts-rest/core';
 import type { contract } from '../contract/index.js';
@@ -6,6 +6,7 @@ import {
   DOCUMENT_CHECKLIST_ITEM_KEYS,
   Event,
   EventStatus,
+  ItemType,
   type AccommodationAttributes,
   type ClientContactAttributes,
   type DocumentsChecklistAttributes,
@@ -15,6 +16,7 @@ import {
   type SessionAttributes,
   type SessionSetupAttributes,
 } from '../models/event.js';
+import { MenuItem, type MenuItemDocument } from '../models/menu-item.js';
 import {
   computeRoomLineTotalInclGst,
   computeTotalCharges,
@@ -22,8 +24,11 @@ import {
   computeTotalOccupancy,
 } from '../services/accommodation.js';
 import { logChange } from '../services/change-log.js';
+import { computeTotalCost } from '../services/item.js';
 import { computeBalance } from '../services/payment.js';
 import { computeDurationDays, computeIsMultiDay } from '../services/session.js';
+import { isDuplicateKeyError } from '../utils/mongo-errors.js';
+import { escapeRegExp } from '../utils/regex.js';
 
 type CreateEventResponse = ServerInferResponses<typeof contract.createEvent>;
 type GetEventResponse = ServerInferResponses<typeof contract.getEvent>;
@@ -36,6 +41,9 @@ type CreateSessionResponse = ServerInferResponses<typeof contract.createSession>
 type UpdateSessionResponse = ServerInferResponses<typeof contract.updateSession>;
 type UpdateSessionBody = ServerInferRequest<typeof contract.updateSession>['body'];
 type DeleteSessionResponse = ServerInferResponses<typeof contract.deleteSession>;
+type CreateItemResponse = ServerInferResponses<typeof contract.createItem>;
+type UpdateItemResponse = ServerInferResponses<typeof contract.updateItem>;
+type UpdateItemBody = ServerInferRequest<typeof contract.updateItem>['body'];
 
 // Narrow (single-member), not the whole per-route union, so the same
 // constant can be returned from any handler whose response union happens to
@@ -52,6 +60,31 @@ const eventNotFound: Extract<GetEventResponse, { status: 404 }> = {
 const sessionNotFound: Extract<UpdateSessionResponse, { status: 404 }> = {
   status: 404,
   body: { error: { code: 'SESSION_NOT_FOUND', message: 'No Session with that id on this Event.' } },
+};
+
+// Distinct from sessionNotFound the same way that's distinct from
+// eventNotFound — the Event and Session both exist, but no Item on the
+// Session matches :iid.
+const itemNotFound: Extract<UpdateItemResponse, { status: 404 }> = {
+  status: 404,
+  body: { error: { code: 'ITEM_NOT_FOUND', message: 'No Item with that id on this Session.' } },
+};
+
+// This story's own edge case: referencing a menuItems id that doesn't
+// resolve to a real Menu Item is a 400, not a silent no-op (and not a
+// 404 — the Item/Session/Event path is well-formed, only the referenced
+// id inside the body is bad, matching how invalidEventManager/
+// invalidSessionDateRange are both 400s for the same "well-formed
+// request, bad reference/value" reason).
+const invalidMenuItemReference: Extract<CreateItemResponse, { status: 400 }> = {
+  status: 400,
+  body: {
+    error: {
+      code: 'VALIDATION_ERROR',
+      message: 'Invalid request body.',
+      details: [{ field: 'menuItems', message: 'menuItems must reference existing Menu Items.' }],
+    },
+  },
 };
 
 const invalidEventManager: Extract<CreateEventResponse, { status: 400 }> = {
@@ -929,6 +962,292 @@ export const deleteSession: AppRouteQueryImplementation<typeof contract.deleteSe
 
   session.deleteOne();
   await existing.save();
+
+  return { status: 204, body: undefined };
+};
+
+// The hydrated element type of a Session subdocument's own `items` —
+// same reasoning SessionSubdocument already documents for `sessions`.
+type ItemSubdocument = SessionSubdocument['items'][number];
+
+// Attempts to create a new Menu Item by name; if that collides
+// case-insensitively with an existing one (STORY-030's own collation
+// index), re-queries for the existing match instead of failing — a
+// "find-or-create" that leans on the database's own uniqueness
+// constraint as the source of truth rather than a check-then-create
+// sequence (which would race two concurrent callers adding the same new
+// name at once).
+const findOrCreateMenuItemByName = async (name: string): Promise<MenuItemDocument> => {
+  try {
+    return await MenuItem.create({ name });
+  } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      const existing = await MenuItem.findOne({ name: { $regex: `^${escapeRegExp(name)}$`, $options: 'i' } });
+      if (existing) {
+        return existing;
+      }
+    }
+    throw error;
+  }
+};
+
+// Resolves every menuItems entry in a request body to a real Menu Item's
+// id — an `{ id }` entry must already exist (returns null for the whole
+// call if any doesn't, this story's own edge case: a bad reference is a
+// 400, not a silent no-op or partial write); an `{ name }` entry is
+// found-or-created (this story's own AC: adding a not-yet-existing Menu
+// Item by name persists it to the shared master list as part of this
+// same request).
+const resolveMenuItemRefs = async (
+  refs: readonly ({ id: string } | { name: string })[],
+): Promise<Types.ObjectId[] | null> => {
+  const ids: Types.ObjectId[] = [];
+  for (const ref of refs) {
+    if ('id' in ref) {
+      const existing = await MenuItem.findById(ref.id);
+      if (!existing) {
+        return null;
+      }
+      ids.push(existing._id);
+    } else {
+      const item = await findOrCreateMenuItemByName(ref.name);
+      ids.push(item._id);
+    }
+  }
+  return ids;
+};
+
+// mealName/pax/costPerPlate are Meal-only; eventName/venue are Event-only —
+// nullable, not just absent, same convention setup's own seating/notes
+// already use. total_cost is always freshly computed from whatever
+// pax/costPerPlate are currently stored (STORY-031's computeTotalCost) —
+// never itself stored, so a submitted total_cost is silently ignored
+// (this story's own AC), and it's null for an Event Item, where the
+// concept doesn't apply.
+const toPublicItem = (item: ItemSubdocument) => ({
+  id: item._id.toString(),
+  type: item.type,
+  mealName: item.mealName ?? null,
+  pax: item.pax ?? null,
+  costPerPlate: item.costPerPlate ?? null,
+  menuItems: item.menuItems.map((ref) => ref.toString()),
+  eventName: item.eventName ?? null,
+  venue: item.venue ?? null,
+  startTime: item.startTime ?? null,
+  endTime: item.endTime ?? null,
+  totalCost:
+    item.pax !== undefined && item.costPerPlate !== undefined
+      ? computeTotalCost({ pax: item.pax, costPerPlate: item.costPerPlate })
+      : null,
+});
+
+// No session_status-equivalent concept here, and no Change Log Entry —
+// adding an Item is a creation, not a field-level edit, the same
+// "creation isn't logged, only edits are" precedent createSession
+// (STORY-027) already established.
+export const createItem: AppRouteMutationImplementation<typeof contract.createItem> = async ({
+  params,
+  body,
+  req,
+}) => {
+  if (!req.user) {
+    // Unreachable — eventManagerOnly (router.ts) runs authenticate before
+    // this handler ever does; guarded instead of asserted past.
+    throw new Error('createItem handler ran without an authenticated user.');
+  }
+
+  const existingEvent = await Event.findById(params.id);
+  if (!existingEvent) {
+    return eventNotFound;
+  }
+
+  const session = existingEvent.sessions.id(params.sid);
+  if (!session) {
+    return sessionNotFound;
+  }
+
+  let menuItemIds: Types.ObjectId[] = [];
+  if (body.type === ItemType.Meal && body.menuItems) {
+    const resolved = await resolveMenuItemRefs(body.menuItems);
+    if (!resolved) {
+      return invalidMenuItemReference;
+    }
+    menuItemIds = resolved;
+  }
+
+  const item = session.items.create(
+    body.type === ItemType.Meal
+      ? {
+          type: ItemType.Meal,
+          mealName: body.mealName,
+          pax: body.pax,
+          costPerPlate: body.costPerPlate,
+          menuItems: menuItemIds,
+          startTime: body.startTime,
+          endTime: body.endTime,
+        }
+      : {
+          type: ItemType.Event,
+          eventName: body.eventName,
+          venue: body.venue,
+          startTime: body.startTime,
+          endTime: body.endTime,
+        },
+  );
+  session.items.push(item);
+
+  await existingEvent.save();
+
+  return { status: 201, body: toPublicItem(item) };
+};
+
+// Mutates `item` in place for every field that actually changed and
+// returns the matching PendingChanges — same "only a genuinely different,
+// caller-sent value becomes a change" rule applySessionUpdate already
+// uses, extended one level deeper. `field` is prefixed with both the
+// Session's identity and the Item's own (mealName, falling back to
+// eventName) — `sessions[<session_type>].items[<item_identity>].<field>`
+// — both captured before this request's own edits, same "old identity,
+// not new" rule applySessionUpdate already established for sessionType.
+// menuItems is resolved async (may need to look up or create Menu Items)
+// and returns the sentinel 'invalid-menu-item-reference' instead of
+// throwing when an `{ id }` entry doesn't resolve, so the handler can
+// turn that into a clean 400 rather than an unhandled rejection.
+const applyItemUpdate = async (
+  session: SessionSubdocument,
+  item: ItemSubdocument,
+  body: UpdateItemBody,
+): Promise<PendingChange[] | 'invalid-menu-item-reference'> => {
+  const prefix = `sessions[${session.sessionType}].items[${item.mealName ?? item.eventName ?? ''}]`;
+  const changes: PendingChange[] = [];
+
+  if (body.mealName !== undefined && body.mealName !== item.mealName) {
+    changes.push({ field: `${prefix}.mealName`, oldValue: item.mealName ?? null, newValue: body.mealName });
+    item.mealName = body.mealName;
+  }
+  if (body.pax !== undefined && body.pax !== item.pax) {
+    changes.push({ field: `${prefix}.pax`, oldValue: item.pax ?? null, newValue: body.pax });
+    item.pax = body.pax;
+  }
+  if (body.costPerPlate !== undefined && body.costPerPlate !== item.costPerPlate) {
+    changes.push({
+      field: `${prefix}.costPerPlate`,
+      oldValue: item.costPerPlate ?? null,
+      newValue: body.costPerPlate,
+    });
+    item.costPerPlate = body.costPerPlate;
+  }
+  if (body.eventName !== undefined && body.eventName !== item.eventName) {
+    changes.push({ field: `${prefix}.eventName`, oldValue: item.eventName ?? null, newValue: body.eventName });
+    item.eventName = body.eventName;
+  }
+  if (body.venue !== undefined && body.venue !== item.venue) {
+    changes.push({ field: `${prefix}.venue`, oldValue: item.venue ?? null, newValue: body.venue });
+    item.venue = body.venue;
+  }
+  if (body.startTime !== undefined && body.startTime !== item.startTime) {
+    changes.push({ field: `${prefix}.startTime`, oldValue: item.startTime ?? null, newValue: body.startTime });
+    item.startTime = body.startTime;
+  }
+  if (body.endTime !== undefined && body.endTime !== item.endTime) {
+    changes.push({ field: `${prefix}.endTime`, oldValue: item.endTime ?? null, newValue: body.endTime });
+    item.endTime = body.endTime;
+  }
+  if (body.menuItems !== undefined) {
+    const resolved = await resolveMenuItemRefs(body.menuItems);
+    if (!resolved) {
+      return 'invalid-menu-item-reference';
+    }
+    const oldIds = item.menuItems.map((ref) => ref.toString());
+    const newIds = resolved.map((ref) => ref.toString());
+    if (JSON.stringify(oldIds) !== JSON.stringify(newIds)) {
+      changes.push({ field: `${prefix}.menuItems`, oldValue: oldIds, newValue: newIds });
+      item.menuItems = resolved;
+    }
+  }
+
+  return changes;
+};
+
+// Same last-write-wins, no-locking stance every other Event PATCH already
+// documents — nothing here adds optimistic concurrency either.
+export const updateItem: AppRouteMutationImplementation<typeof contract.updateItem> = async ({
+  params,
+  body,
+  req,
+}) => {
+  if (!req.user) {
+    // Unreachable — eventManagerOnly (router.ts) runs authenticate before
+    // this handler ever does; guarded instead of asserted past.
+    throw new Error('updateItem handler ran without an authenticated user.');
+  }
+  const changedByUserId = req.user.id;
+
+  const existingEvent = await Event.findById(params.id);
+  if (!existingEvent) {
+    return eventNotFound;
+  }
+
+  const session = existingEvent.sessions.id(params.sid);
+  if (!session) {
+    return sessionNotFound;
+  }
+
+  const item = session.items.id(params.iid);
+  if (!item) {
+    return itemNotFound;
+  }
+
+  const changes = await applyItemUpdate(session, item, body);
+  if (changes === 'invalid-menu-item-reference') {
+    return invalidMenuItemReference;
+  }
+
+  if (changes.length === 0) {
+    return { status: 200, body: toPublicItem(item) };
+  }
+
+  await existingEvent.save();
+
+  const eventId = existingEvent.id;
+  await Promise.all(
+    changes.map((change) =>
+      logChange({
+        entityType: 'Event',
+        entityId: eventId,
+        field: change.field,
+        oldValue: change.oldValue,
+        newValue: change.newValue,
+        changedByUserId,
+      }),
+    ),
+  );
+
+  return { status: 200, body: toPublicItem(item) };
+};
+
+// No Change Log Entry — removing a whole Item is a deletion, not a
+// field-level edit, the same "creation isn't logged, only edits are"
+// precedent createItem/createSession/deleteSession already established,
+// applied symmetrically here.
+export const deleteItem: AppRouteQueryImplementation<typeof contract.deleteItem> = async ({ params }) => {
+  const existingEvent = await Event.findById(params.id);
+  if (!existingEvent) {
+    return eventNotFound;
+  }
+
+  const session = existingEvent.sessions.id(params.sid);
+  if (!session) {
+    return sessionNotFound;
+  }
+
+  const item = session.items.id(params.iid);
+  if (!item) {
+    return itemNotFound;
+  }
+
+  item.deleteOne();
+  await existingEvent.save();
 
   return { status: 204, body: undefined };
 };

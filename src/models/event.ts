@@ -161,10 +161,14 @@ export interface ItemAttributes {
   mealName?: string;
   pax?: number;
   costPerPlate?: number;
-  // References into the shared Menu Item master list (STORY-030) — no
-  // existence validation yet, same "shape now, enforce later if a story
-  // actually needs it" precedent eventManager's own validator was the
-  // exception to, not the rule.
+  // References into the shared Menu Item master list (STORY-030) — every
+  // id here is validated as an existing MenuItem at the endpoint layer
+  // (STORY-032's controller), not via a schema-level `validate` the way
+  // eventManager's own reference check works (below): a caller-supplied
+  // `{ name }` entry needs find-or-create logic (create, or fall back to
+  // a case-insensitive lookup on conflict), which is real controller
+  // business logic, not a single boolean existence check a schema
+  // validator function can express cleanly.
   menuItems: Types.ObjectId[];
   eventName?: string;
   // Free text, not an enum — same "prefilled" phrasing as Session's venue.
@@ -194,7 +198,11 @@ export interface SessionAttributes {
   pax: number;
   sessionStatus: SessionStatus;
   setup: SessionSetupAttributes;
-  items: ItemAttributes[];
+  // Typed as a DocumentArray (not plain ItemAttributes[], unlike when
+  // STORY-031 first added this field) — STORY-032 is the first place an
+  // Item's own generated sub-id needs to come back out, the same reason
+  // Event.sessions was retyped in STORY-027.
+  items: Types.DocumentArray<ItemAttributes>;
 }
 
 export interface EventAttributes {

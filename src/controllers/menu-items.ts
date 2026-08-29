@@ -3,6 +3,7 @@ import type { ServerInferResponses } from '@ts-rest/core';
 import type { contract } from '../contract/index.js';
 import { MenuItem, type MenuItemDocument } from '../models/menu-item.js';
 import { isDuplicateKeyError } from '../utils/mongo-errors.js';
+import { escapeRegExp } from '../utils/regex.js';
 
 type CreateMenuItemResponse = ServerInferResponses<typeof contract.createMenuItem>;
 
@@ -13,11 +14,6 @@ const toPublicMenuItem = (item: MenuItemDocument) => ({
   createdAt: item.createdAt,
   updatedAt: item.updatedAt,
 });
-
-// Escapes regex metacharacters in the caller-supplied search term before
-// it becomes part of a $regex query — a literal search for "3.5" or "*"
-// must match that literal substring, not be interpreted as a pattern.
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Empty/omitted search returns the full list, not a 400 (this story's own
 // edge case) — no filter reads the same as "show me everything," matching

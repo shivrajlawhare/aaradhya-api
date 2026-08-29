@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ClientContactRole, EventStatus, SeatingArrangement, SessionStatus } from '../../models/event.js';
+import { ClientContactRole, EventStatus, ItemType, SeatingArrangement, SessionStatus } from '../../models/event.js';
 import { objectIdSchema } from './common.js';
 
 // One boolean field per fixed key, hand-written (not built from
@@ -231,6 +231,83 @@ export const sessionResultSchema = z.object({
   durationDays: z.number(),
   isMultiDay: z.boolean(),
   setup: sessionSetupResultSchema,
+});
+
+// Each entry either references an existing Menu Item by id, or a name to
+// find-or-create (reusing STORY-030's own uniqueness semantics) — the SRS's
+// "search existing Menu Items or add new inline" flow (§4.5) folded into a
+// single input shape, rather than requiring a caller to always call
+// POST /menu-items first and pass only ids.
+const menuItemRefInputSchema = z.union([
+  z.object({ id: objectIdSchema('Invalid menu item id.') }),
+  z.object({ name: z.string().trim().min(1) }),
+]);
+
+const mealItemBodySchema = z.object({
+  type: z.literal(ItemType.Meal),
+  mealName: z.string().trim().min(1),
+  pax: z.number().min(0),
+  costPerPlate: z.number().min(0),
+  menuItems: z.array(menuItemRefInputSchema).optional(),
+  startTime: z.string().trim().min(1).optional(),
+  endTime: z.string().trim().min(1).optional(),
+});
+
+const eventItemBodySchema = z.object({
+  type: z.literal(ItemType.Event),
+  eventName: z.string().trim().min(1),
+  venue: z.string().trim().min(1),
+  startTime: z.string().trim().min(1).optional(),
+  endTime: z.string().trim().min(1).optional(),
+});
+
+// A discriminated union, not a flat optional-everything shape — Zod
+// enforces "requires the correct field set for whichever type is set"
+// (this story's own AC) at the request-validation layer itself, ahead of
+// and independent from itemSchema's own per-field `required` functions
+// (STORY-031) doing the same at the persistence layer.
+export const createItemBodySchema = z.discriminatedUnion('type', [mealItemBodySchema, eventItemBodySchema]);
+
+// Every field optional (PATCH semantics) — a caller sends only what
+// changed. No `type` here: switching an Item between Meal/Event isn't
+// something this story's AC asks for, so it isn't offered.
+export const updateItemBodySchema = z.object({
+  mealName: z.string().trim().min(1).optional(),
+  pax: z.number().min(0).optional(),
+  costPerPlate: z.number().min(0).optional(),
+  menuItems: z.array(menuItemRefInputSchema).optional(),
+  eventName: z.string().trim().min(1).optional(),
+  venue: z.string().trim().min(1).optional(),
+  startTime: z.string().trim().min(1).optional(),
+  endTime: z.string().trim().min(1).optional(),
+});
+
+export const eventSessionItemParamsSchema = z.object({
+  id: objectIdSchema('Invalid event id.'),
+  sid: objectIdSchema('Invalid session id.'),
+  iid: objectIdSchema('Invalid item id.'),
+});
+
+// mealName/pax/costPerPlate are Meal-only; eventName/venue are Event-only —
+// nullable, not just absent, same "not applicable to the current variant
+// reads as null" convention setup's own seating/notes already use.
+// menuItems is always an array (ids only — no populate/expand convention
+// exists anywhere yet). total_cost is derived (STORY-031's
+// computeTotalCost) — null for an Event Item, since the concept doesn't
+// apply; never accepted as input (this story's own AC: a client-submitted
+// total_cost is ignored).
+export const itemResultSchema = z.object({
+  id: z.string(),
+  type: z.nativeEnum(ItemType),
+  mealName: z.string().nullable(),
+  pax: z.number().nullable(),
+  costPerPlate: z.number().nullable(),
+  menuItems: z.array(z.string()),
+  eventName: z.string().nullable(),
+  venue: z.string().nullable(),
+  startTime: z.string().nullable(),
+  endTime: z.string().nullable(),
+  totalCost: z.number().nullable(),
 });
 
 // The public Event shape — everything STORY-011's schema persists, plus the

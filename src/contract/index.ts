@@ -6,17 +6,21 @@ import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/
 import {
   accommodationResultSchema,
   createEventBodySchema,
+  createItemBodySchema,
   createSessionBodySchema,
   documentsChecklistResultSchema,
   eventIdParamsSchema,
   eventResultSchema,
+  eventSessionItemParamsSchema,
   eventSessionParamsSchema,
+  itemResultSchema,
   paymentResultSchema,
   sessionResultSchema,
   updateAccommodationBodySchema,
   updateDocumentsChecklistBodySchema,
   updateEventBodySchema,
   updateEventPaymentBodySchema,
+  updateItemBodySchema,
   updateSessionBodySchema,
 } from './schemas/event.js';
 import {
@@ -225,5 +229,39 @@ export const contract = c.router({
       409: apiErrorSchema,
     },
     summary: 'Add a Menu Item to the shared master list (any authenticated caller)',
+  },
+  createItem: {
+    method: 'POST',
+    path: '/events/:id/sessions/:sid/items',
+    pathParams: eventSessionParamsSchema,
+    body: createItemBodySchema,
+    responses: {
+      201: itemResultSchema,
+      400: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: 'Add a Meal or Event Item to a Session (Event Manager only)',
+  },
+  updateItem: {
+    method: 'PATCH',
+    path: '/events/:id/sessions/:sid/items/:iid',
+    pathParams: eventSessionItemParamsSchema,
+    body: updateItemBodySchema,
+    responses: {
+      200: itemResultSchema,
+      400: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Edit one of a Session's Items (Event Manager only)",
+  },
+  deleteItem: {
+    method: 'DELETE',
+    path: '/events/:id/sessions/:sid/items/:iid',
+    pathParams: eventSessionItemParamsSchema,
+    responses: {
+      204: c.noBody(),
+      404: apiErrorSchema,
+    },
+    summary: "Remove one of a Session's Items (Event Manager only)",
   },
 });
