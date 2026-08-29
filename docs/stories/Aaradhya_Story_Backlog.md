@@ -404,6 +404,9 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** `surface-2` (footer totals band), `text`, `type-body-m`, `type-label-s` (column headers), tabular-nums for all numeric columns, `space-12`.
 **Edge cases:** Editing a field, then navigating away before saving (must prompt or discard cleanly, not leave the record in an inconsistent local state).
 
+**Decisions (v1) — aaradhya-api side of this story:**
+- This story is UI-only per its own "UI: None (backend only)" being absent (it *has* a UI) — but building it surfaced a real backend gap: **`GET /events/:id` never returned `accommodation` at all**, and no story had added a dedicated GET for it (STORY-019 only added the PATCH). The Rooms tab has no way to show the *current* Accommodation Block on first render without one. Fixed minimally: `accommodation` (via STORY-019's own `toPublicAccommodation`) was added to `eventResultSchema`/`toPublicEvent()` — purely additive, verified against the full existing test suite passing unchanged before adding new coverage for it.
+
 ### STORY-021: Payment schema + balance computation
 **Flow:** No user flow yet — extends Event with a Payment Record (`total_estimated_amount`, `advance_required`, `advance_paid`, `advance_paid_date`, `payment_mode`) and the pure `balance` function.
 **Acceptance Criteria:**

@@ -49,19 +49,6 @@ const clientContactResultSchema = z.object({
   role: z.nativeEnum(ClientContactRole),
 });
 
-// The public Event shape — everything STORY-011's schema persists.
-export const eventResultSchema = z.object({
-  id: z.string(),
-  eventId: z.string(),
-  eventFamilyType: z.string(),
-  status: z.nativeEnum(EventStatus),
-  eventManager: z.string(),
-  clientContacts: z.array(clientContactResultSchema),
-  createdBy: z.string(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-});
-
 const roomLineInputSchema = z.object({
   roomType: z.string().trim().min(1),
   occupancy: z.number().min(0),
@@ -98,4 +85,25 @@ export const accommodationResultSchema = z.object({
   roomLines: z.array(roomLineResultSchema),
   totalOccupancy: z.number(),
   totalCharges: z.number(),
+});
+
+// The public Event shape — everything STORY-011's schema persists, plus the
+// Accommodation Block (STORY-018/019). GET /events/:id (STORY-013) never
+// exposed accommodation at all until now — STORY-020 (the Rooms tab UI)
+// needs a way to read the *current* accommodation state on first render,
+// and no story had added a GET for it (STORY-019 only added the PATCH).
+// This is the minimal, additive fix: one more field on an already-public
+// response, reusing STORY-019's own toPublicAccommodation — not a new
+// concept, not a breaking change to the existing shape.
+export const eventResultSchema = z.object({
+  id: z.string(),
+  eventId: z.string(),
+  eventFamilyType: z.string(),
+  status: z.nativeEnum(EventStatus),
+  eventManager: z.string(),
+  clientContacts: z.array(clientContactResultSchema),
+  accommodation: accommodationResultSchema,
+  createdBy: z.string(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
 });

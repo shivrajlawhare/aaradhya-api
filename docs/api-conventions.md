@@ -174,6 +174,15 @@ request shape, not which credential was wrong.
   VALIDATION_ERROR` at the contract's `pathParams` schema, same convention as
   `PATCH /users/:id`; a well-formed id with no matching Event is `404 {
   "error": { "code": "EVENT_NOT_FOUND", ... } }`.
+- **`eventResultSchema` includes `accommodation` as of STORY-020** — added
+  retroactively (this section stayed "STORY-013" since nothing else about
+  it changed): STORY-020's Rooms tab needed a way to read the *current*
+  Accommodation Block on first render, and no story had ever added a GET
+  for it (STORY-019 only added the PATCH). Reuses STORY-019's own
+  `toPublicAccommodation`, so the shape is identical to that PATCH
+  endpoint's response body — purely additive, every existing consumer of
+  `eventResultSchema` (`POST /events`, `GET /events`, `PATCH /events/:id`)
+  just gained one more field.
 
 ### PATCH /events/:id — SETTLED (STORY-014)
 

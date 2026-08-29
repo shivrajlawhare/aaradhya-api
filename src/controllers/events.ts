@@ -49,35 +49,6 @@ const invalidEventManager: Extract<CreateEventResponse, { status: 400 }> = {
   },
 };
 
-const toPublicEvent = (event: EventDocument) => ({
-  id: event.id,
-  eventId: event.eventId,
-  eventFamilyType: event.eventFamilyType,
-  status: event.status,
-  eventManager: event.eventManager.toString(),
-  clientContacts: event.clientContacts.map((contact) => ({
-    name: contact.name,
-    contactNumber: contact.contactNumber,
-    role: contact.role,
-  })),
-  createdBy: event.createdBy.toString(),
-  createdAt: event.createdAt,
-  updatedAt: event.updatedAt,
-});
-
-// Drops the subdocument's own `_id` so a stored row compares equal to a
-// plain submitted row shaped the same as clientContactInputSchema.
-const toPlainContact = ({ name, contactNumber, role }: ClientContactAttributes) => ({
-  name,
-  contactNumber,
-  role,
-});
-
-const areClientContactsEqual = (
-  stored: ClientContactAttributes[],
-  submitted: ClientContactAttributes[],
-): boolean => JSON.stringify(stored.map(toPlainContact)) === JSON.stringify(submitted.map(toPlainContact));
-
 // checkIn/checkOut/totalDays are nullable, not just absent — an Event can
 // genuinely have no accommodation entered yet (accommodation itself is
 // optional on the Event, STORY-018). totalOccupancy/totalCharges default to
@@ -103,6 +74,41 @@ const toPublicAccommodation = (accommodation: AccommodationAttributes | undefine
     totalCharges: computeTotalCharges(roomLines),
   };
 };
+
+// accommodation reuses toPublicAccommodation (STORY-019) — GET /events/:id
+// never exposed it until STORY-020 needed a way to read the current
+// Accommodation Block on first render of the Rooms tab; no prior story had
+// added a GET for it. Additive only: every existing consumer of this shape
+// just gets one more field.
+const toPublicEvent = (event: EventDocument) => ({
+  id: event.id,
+  eventId: event.eventId,
+  eventFamilyType: event.eventFamilyType,
+  status: event.status,
+  eventManager: event.eventManager.toString(),
+  clientContacts: event.clientContacts.map((contact) => ({
+    name: contact.name,
+    contactNumber: contact.contactNumber,
+    role: contact.role,
+  })),
+  accommodation: toPublicAccommodation(event.accommodation),
+  createdBy: event.createdBy.toString(),
+  createdAt: event.createdAt,
+  updatedAt: event.updatedAt,
+});
+
+// Drops the subdocument's own `_id` so a stored row compares equal to a
+// plain submitted row shaped the same as clientContactInputSchema.
+const toPlainContact = ({ name, contactNumber, role }: ClientContactAttributes) => ({
+  name,
+  contactNumber,
+  role,
+});
+
+const areClientContactsEqual = (
+  stored: ClientContactAttributes[],
+  submitted: ClientContactAttributes[],
+): boolean => JSON.stringify(stored.map(toPlainContact)) === JSON.stringify(submitted.map(toPlainContact));
 
 // Drops the subdocument's own `_id` so a stored room line compares equal to
 // a plain submitted line shaped the same as roomLineInputSchema.

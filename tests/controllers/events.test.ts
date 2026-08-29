@@ -326,6 +326,39 @@ describe('GET /events/:id', () => {
     expect(response.body).toEqual(created.body);
   });
 
+  it('includes accommodation, defaulting to an empty/null state for a freshly created Event', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.accommodation).toEqual({
+      checkIn: null,
+      checkOut: null,
+      totalDays: null,
+      roomLines: [],
+      totalOccupancy: 0,
+      totalCharges: 0,
+    });
+  });
+
+  it('reflects a prior PATCH /events/:id/accommodation edit', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchAccommodationAs(token, created.body.id, {
+      roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }],
+    });
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.accommodation.roomLines).toEqual([
+      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1, totalInclGst: 5900 },
+    ]);
+    expect(response.body.accommodation.totalCharges).toBe(5900);
+  });
+
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
 
