@@ -596,6 +596,13 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** `pax = 0` on a Meal Item (valid — `total_cost` computes to 0, e.g. a placeholder row being filled in); `cost_per_plate` as a decimal (must not round incorrectly in the multiplication).
 
+**Decisions (v1):**
+- **A flat schema with per-field conditional `required` functions**, not Mongoose's schema-discriminator feature — a shared `requiredForItemType(type)` factory returns the actual `required` function for each of `mealName`/`pax`/`costPerPlate` (`ItemType.Meal`) and `eventName`/`venue` (`ItemType.Event`), rather than five near-identical inline closures. This repo doesn't use discriminators anywhere yet, and a flat shape matches every other cross-field rule already in this file (`sessionSchema`'s own `endDate` validator) rather than introducing a new pattern for just this one case — this is the concrete schema-level enforcement of this story's own AC.
+- **`total_cost` (`computeTotalCost`, `src/services/item.ts`) is never stored**, always freshly computed from `pax`/`cost_per_plate` — same "derived, never trusted from the client" convention `totalDays`/`totalInclGst`/`balance`/`durationDays` already established. It reuses `roundToCurrency` (now its third caller), which is exactly what resolves this story's own decimal-rounding edge case — `roundToCurrency(pax * costPerPlate)` avoids the floating-point drift a raw multiplication (`33.33 * 3` → `99.98999999999999` in JS) would otherwise produce.
+- **`menuItems` is a plain `Types.ObjectId[]` ref array, no existence validation** — matches the "shape now, enforce later only if a story actually needs it" precedent already set (e.g. `sessions` didn't validate anything beyond its own field-level rules until an endpoint needed to); no AC bullet here asks for reference validation.
+- **`created_via`/full `menu_items[]` add-inline UX are out of scope** — this story is schema + the one pure function; STORY-032/033 own the actual endpoints/UI.
+- **`Session.items` stays a plain `ItemAttributes[]`, not `Types.DocumentArray<ItemAttributes>`** — unlike `Event.sessions` (retyped in STORY-027 specifically because that story needed `.create()`/typed `_id` access), nothing in this schema-only story reads an Item's own sub-id. Expect the same retyping STORY-027 needed for `sessions` to recur for `items` once STORY-032's endpoint needs it.
+
 ### STORY-032: POST/PATCH/DELETE /events/:id/sessions/:sid/items
 **Flow:** An Event Manager adds a Meal or Event Item to a Session, searching/adding Menu Items inline for Meal Items via STORY-030.
 **Acceptance Criteria:**

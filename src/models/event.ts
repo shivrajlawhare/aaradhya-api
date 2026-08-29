@@ -133,11 +133,49 @@ export interface SessionSetupAttributes {
   notes?: string;
 }
 
-// SRS §4.2 — one scheduled block of activity within an Event. items[] (Meal/
-// Event Items, §4.5) is deliberately absent here — this story's own Flow
-// line lists exactly session_type/venue/venue_cost/start_date/end_date/
-// start_time/end_time/pax/session_status/setup, not Items; that's a later
-// story's schema to add.
+// SRS §4.5 — a single line within a Session: either a Meal Item (food/
+// beverage, tied to Menu Items) or an Event Item (a non-food program
+// moment, e.g. Muhurta, Cake Cutting).
+export enum ItemType {
+  Meal = 'Meal',
+  Event = 'Event',
+}
+
+export const ITEM_TYPE_VALUES: ItemType[] = Object.values(ItemType);
+
+// mealName/pax/costPerPlate are Meal-only; eventName/venue are Event-only —
+// enforced at the schema level (each field's own conditional `required`,
+// see itemSchema below) per this story's own AC, not by a discriminated
+// TS union: this repo doesn't use Mongoose's schema-discriminator feature
+// anywhere yet, so a flat shape with per-field conditional `required`
+// functions matches every other cross-field rule already in this file
+// (e.g. sessionSchema's own endDate validator) rather than introducing a
+// new pattern for just this one case. totalCost is deliberately absent —
+// derived (src/services/item.ts), never stored, same "never trust a
+// stored derived value" convention totalDays/totalInclGst/balance/
+// durationDays already established.
+export interface ItemAttributes {
+  type: ItemType;
+  // Free text, not an enum — SRS phrases this like session_type/venue
+  // ("prefilled + custom"), the same reasoning that kept those free text.
+  mealName?: string;
+  pax?: number;
+  costPerPlate?: number;
+  // References into the shared Menu Item master list (STORY-030) — no
+  // existence validation yet, same "shape now, enforce later if a story
+  // actually needs it" precedent eventManager's own validator was the
+  // exception to, not the rule.
+  menuItems: Types.ObjectId[];
+  eventName?: string;
+  // Free text, not an enum — same "prefilled" phrasing as Session's venue.
+  venue?: string;
+  // Local time-of-day values, shared by either type — same convention
+  // Session's own startTime/endTime already use.
+  startTime?: string;
+  endTime?: string;
+}
+
+// SRS §4.2 — one scheduled block of activity within an Event.
 export interface SessionAttributes {
   // Free text, not an enum — SRS phrases this exactly like
   // event_family_type ("dropdown + custom"), so the schema stays open the
@@ -156,6 +194,7 @@ export interface SessionAttributes {
   pax: number;
   sessionStatus: SessionStatus;
   setup: SessionSetupAttributes;
+  items: ItemAttributes[];
 }
 
 export interface EventAttributes {
@@ -254,6 +293,34 @@ const sessionSetupSchema = new Schema<SessionSetupAttributes>(
   { _id: false },
 );
 
+// Returns a Mongoose `required` function for "only required when this
+// Item's own type matches" — a regular function (not an arrow function),
+// same reason sessionSchema's own endDate validator below is, so `this`
+// binds to the subdocument being validated rather than lexically
+// capturing the outer scope. Shared by every conditionally-required field
+// below rather than five near-identical inline closures — this is the
+// schema-level enforcement of this story's own AC: "requires the correct
+// field set for whichever type is set."
+const requiredForItemType = (type: ItemType) =>
+  function (this: ItemAttributes): boolean {
+    return this.type === type;
+  };
+
+const itemSchema = new Schema<ItemAttributes>({
+  type: { type: String, required: true, enum: ITEM_TYPE_VALUES },
+  mealName: { type: String, trim: true, required: requiredForItemType(ItemType.Meal) },
+  // A pax of 0 is a valid placeholder row (this story's own edge case,
+  // decided as "allowed") — min: 0, not min: 1; total_cost simply computes
+  // to 0, not an error.
+  pax: { type: Number, min: 0, required: requiredForItemType(ItemType.Meal) },
+  costPerPlate: { type: Number, min: 0, required: requiredForItemType(ItemType.Meal) },
+  menuItems: { type: [{ type: Schema.Types.ObjectId, ref: 'MenuItem' }], default: [] },
+  eventName: { type: String, trim: true, required: requiredForItemType(ItemType.Event) },
+  venue: { type: String, trim: true, required: requiredForItemType(ItemType.Event) },
+  startTime: { type: String, trim: true },
+  endTime: { type: String, trim: true },
+});
+
 // end_date's validator is a regular function (not an arrow function) so
 // `this` binds to the subdocument being validated, per Mongoose's own
 // validator-context convention — this is the schema-level enforcement of
@@ -291,6 +358,10 @@ const sessionSchema = new Schema<SessionAttributes>({
   // documentsChecklist above — every Session genuinely has a setup record
   // from the moment it's added, even if every field is still at its default.
   setup: { type: sessionSetupSchema, required: true, default: () => ({}) },
+  // Zero or more at the schema level, same reasoning as sessions on Event —
+  // this story only defines the shape; any create/edit endpoint (and
+  // whatever "at least one Item" rule, if any) is a later story's job.
+  items: { type: [itemSchema], default: [] },
 });
 
 // event_manager must point at a real User Account whose role is

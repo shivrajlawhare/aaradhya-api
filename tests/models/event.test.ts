@@ -4,6 +4,7 @@ import {
   ClientContactRole,
   Event,
   EventStatus,
+  ItemType,
   SeatingArrangement,
   SessionStatus,
   type ClientContactAttributes,
@@ -644,6 +645,136 @@ describe('Event model', () => {
       expect(error.errors).toHaveProperty(`sessions.0.${field}`);
     },
   );
+
+  it('accepts a valid Meal Item, with no event_name/venue required', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [
+        validSession({
+          items: [{ type: ItemType.Meal, mealName: 'Lunch', pax: 100, costPerPlate: 500, menuItems: [] }],
+        }),
+      ],
+    });
+
+    expect(event.sessions[0]?.items[0]).toMatchObject({
+      type: ItemType.Meal,
+      mealName: 'Lunch',
+      pax: 100,
+      costPerPlate: 500,
+    });
+  });
+
+  it('accepts a valid Event Item, with no pax/cost_per_plate required', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [
+        validSession({
+          items: [{ type: ItemType.Event, eventName: 'Muhurta', venue: 'Lawn', menuItems: [] }],
+        }),
+      ],
+    });
+
+    expect(event.sessions[0]?.items[0]).toMatchObject({
+      type: ItemType.Event,
+      eventName: 'Muhurta',
+      venue: 'Lawn',
+    });
+  });
+
+  it('accepts a Meal Item with pax: 0 as a placeholder row', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [
+        validSession({
+          items: [{ type: ItemType.Meal, mealName: 'Lunch', pax: 0, costPerPlate: 500, menuItems: [] }],
+        }),
+      ],
+    });
+
+    expect(event.sessions[0]?.items[0]?.pax).toBe(0);
+  });
+
+  it('rejects an item with a type outside Meal/Event', async () => {
+    const manager = await createEventManager();
+
+    const error = await expectValidationError(Event, {
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [{ ...validSession(), items: [{ type: 'Snack', mealName: 'Lunch', pax: 1, costPerPlate: 1 }] }],
+    });
+
+    expect(error.errors).toHaveProperty('sessions.0.items.0.type');
+  });
+
+  it.each(['mealName', 'pax', 'costPerPlate'])(
+    'rejects a Meal Item missing %s',
+    async (field) => {
+      const manager = await createEventManager();
+      const item: Record<string, unknown> = { type: ItemType.Meal, mealName: 'Lunch', pax: 100, costPerPlate: 500 };
+      delete item[field];
+
+      const error = await expectValidationError(Event, {
+        eventFamilyType: 'Wedding',
+        status: EventStatus.Tentative,
+        eventManager: manager.id,
+        createdBy: manager.id,
+        sessions: [{ ...validSession(), items: [item] }],
+      });
+
+      expect(error.errors).toHaveProperty(`sessions.0.items.0.${field}`);
+    },
+  );
+
+  it.each(['eventName', 'venue'])('rejects an Event Item missing %s', async (field) => {
+    const manager = await createEventManager();
+    const item: Record<string, unknown> = { type: ItemType.Event, eventName: 'Muhurta', venue: 'Lawn' };
+    delete item[field];
+
+    const error = await expectValidationError(Event, {
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [{ ...validSession(), items: [item] }],
+    });
+
+    expect(error.errors).toHaveProperty(`sessions.0.items.0.${field}`);
+  });
+
+  it('does not require mealName/pax/costPerPlate on an Event Item', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [
+        validSession({ items: [{ type: ItemType.Event, eventName: 'Muhurta', venue: 'Lawn', menuItems: [] }] }),
+      ],
+    });
+
+    expect(event.sessions[0]?.items[0]?.mealName).toBeUndefined();
+    expect(event.sessions[0]?.items[0]?.pax).toBeUndefined();
+    expect(event.sessions[0]?.items[0]?.costPerPlate).toBeUndefined();
+  });
 
   it.each(['eventFamilyType', 'status', 'eventManager', 'createdBy'])(
     'rejects a document missing %s',
