@@ -2,7 +2,7 @@ import { initServer } from '@ts-rest/express';
 import { contract } from './contract/index.js';
 import { login } from './controllers/auth.js';
 import { listChangeLog } from './controllers/change-log.js';
-import { createEvent, getEvent, listEvents } from './controllers/events.js';
+import { createEvent, getEvent, listEvents, updateEvent } from './controllers/events.js';
 import { checkHealth } from './controllers/health.js';
 import { createUser, listUsers, updateUser } from './controllers/users.js';
 import { authenticate, requireRole } from './middleware/auth.js';
@@ -45,5 +45,9 @@ export const router = server.router(contract, {
   getEvent: {
     middleware: authenticatedOnly,
     handler: getEvent,
+  },
+  updateEvent: {
+    middleware: eventManagerOnly,
+    handler: updateEvent,
   },
 });

@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { apiErrorSchema } from './schemas/common.js';
 import { loginBodySchema, loginResultSchema } from './schemas/auth.js';
 import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/change-log.js';
-import { createEventBodySchema, eventIdParamsSchema, eventResultSchema } from './schemas/event.js';
+import {
+  createEventBodySchema,
+  eventIdParamsSchema,
+  eventResultSchema,
+  updateEventBodySchema,
+} from './schemas/event.js';
 import {
   createUserBodySchema,
   updateUserBodySchema,
@@ -107,5 +112,17 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: 'Get one Event by id (any authenticated caller)',
+  },
+  updateEvent: {
+    method: 'PATCH',
+    path: '/events/:id',
+    pathParams: eventIdParamsSchema,
+    body: updateEventBodySchema,
+    responses: {
+      200: eventResultSchema,
+      400: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: 'Edit core fields and/or Client Contacts on an Event (Event Manager only)',
   },
 });

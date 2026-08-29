@@ -31,6 +31,18 @@ export const createEventBodySchema = z.object({
   clientContacts: z.array(clientContactInputSchema).min(1),
 });
 
+// Every field optional (PATCH semantics — a caller sends only what changed),
+// but a supplied `clientContacts` still needs at least one row: this is the
+// same "at least one Client Contact" rule STORY-012 enforces at create time,
+// restated here since removing the last remaining row is exactly the case
+// this story's AC calls out to reject.
+export const updateEventBodySchema = z.object({
+  eventFamilyType: z.string().trim().min(1).optional(),
+  status: z.nativeEnum(EventStatus).optional(),
+  eventManager: objectIdSchema('Invalid event_manager id.').optional(),
+  clientContacts: z.array(clientContactInputSchema).min(1).optional(),
+});
+
 const clientContactResultSchema = z.object({
   name: z.string(),
   contactNumber: z.string(),

@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
+import { ChangeLogEntry } from '../../src/models/change-log-entry.js';
 import { ClientContactRole, Event, EventStatus } from '../../src/models/event.js';
 import { Role, User } from '../../src/models/user.js';
 import { signSessionToken } from '../../src/services/token.js';
@@ -42,6 +43,9 @@ const listEventsAs = (token: string) =>
 
 const getEventAs = (token: string, id: string) =>
   request(app).get(`/events/${id}`).set('Authorization', `Bearer ${token}`);
+
+const patchEventAs = (token: string, id: string, body: object) =>
+  request(app).patch(`/events/${id}`).set('Authorization', `Bearer ${token}`).send(body);
 
 beforeAll(connectTestDb);
 afterEach(clearCollections);
@@ -337,5 +341,192 @@ describe('GET /events/:id', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('PATCH /events/:id', () => {
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+
+    const response = await request(app)
+      .patch(`/events/${created.body.id}`)
+      .send({ status: EventStatus.Confirmed });
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(creatorToken, validPayload(manager.id));
+      const { token } = await seedCaller(role);
+
+      const response = await patchEventAs(token, created.body.id, { status: EventStatus.Confirmed });
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchEventAs(token, '507f1f77bcf86cd799439011', {
+      status: EventStatus.Confirmed,
+    });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' },
+    });
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchEventAs(token, 'not-an-id', { status: EventStatus.Confirmed });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('changes status to Cancelled from any prior status, reflected on the next GET', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id, { status: EventStatus.Confirmed }));
+
+    const patchResponse = await patchEventAs(token, created.body.id, { status: EventStatus.Cancelled });
+    expect(patchResponse.status).toBe(200);
+    expect(patchResponse.body.status).toBe(EventStatus.Cancelled);
+
+    const getResponse = await getEventAs(token, created.body.id);
+    expect(getResponse.body.status).toBe(EventStatus.Cancelled);
+  });
+
+  it('writes exactly one Change Log Entry with the correct field/oldValue/newValue for a single-field edit', async () => {
+    const { caller, token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchEventAs(token, created.body.id, { eventFamilyType: 'Corporate Offsite' });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      field: 'eventFamilyType',
+      oldValue: 'Wedding',
+      newValue: 'Corporate Offsite',
+      changedBy: caller.id,
+    });
+  });
+
+  it('writes one Change Log Entry per changed field when several fields are edited at once', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const otherManager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchEventAs(token, created.body.id, {
+      status: EventStatus.Confirmed,
+      eventManager: otherManager.id,
+    });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries.map((entry) => entry.field).sort()).toEqual(['eventManager', 'status']);
+  });
+
+  it('writes a Change Log Entry for the full before/after client_contacts array when a row is added', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const newContacts = [
+      { name: 'Priya Nair', contactNumber: '9876543210', role: ClientContactRole.Bride },
+      { name: 'Rohan Nair', contactNumber: '9123456780', role: ClientContactRole.Groom },
+    ];
+    const response = await patchEventAs(token, created.body.id, { clientContacts: newContacts });
+
+    expect(response.status).toBe(200);
+    expect(response.body.clientContacts).toEqual(newContacts);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries).toHaveLength(1);
+    const [entry] = entries;
+    if (!entry) {
+      throw new Error('expected exactly one Change Log Entry');
+    }
+    expect(entry.field).toBe('clientContacts');
+    expect(entry.oldValue).toEqual([
+      { name: 'Priya Nair', contactNumber: '9876543210', role: ClientContactRole.Bride },
+    ]);
+    expect(entry.newValue).toEqual(newContacts);
+  });
+
+  it('rejects removing the last remaining Client Contact row with 400', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchEventAs(token, created.body.id, { clientContacts: [] });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries).toHaveLength(0);
+  });
+
+  it('writes no Change Log Entry for a PATCH that resubmits identical values', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchEventAs(token, created.body.id, {
+      eventFamilyType: 'Wedding',
+      eventManager: manager.id,
+    });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries).toHaveLength(0);
+  });
+
+  it('returns 400 when event_manager is changed to reference a nonexistent User Account', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchEventAs(token, created.body.id, {
+      eventManager: '507f1f77bcf86cd799439011',
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })]),
+    );
+    const stored = await Event.findById(created.body.id);
+    expect(stored?.eventManager.toString()).toBe(manager.id);
+  });
+
+  it('returns 400 when event_manager is changed to reference a User whose role is not EventManager', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const nonManager = await User.create({
+      name: 'FnB Head',
+      username: 'fnb-head',
+      passwordHash: 'not-used-in-these-tests',
+      role: Role.FnBHead,
+    });
+
+    const response = await patchEventAs(token, created.body.id, { eventManager: nonManager.id });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })]),
+    );
   });
 });

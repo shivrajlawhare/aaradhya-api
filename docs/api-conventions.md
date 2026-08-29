@@ -175,6 +175,43 @@ request shape, not which credential was wrong.
   `PATCH /users/:id`; a well-formed id with no matching Event is `404 {
   "error": { "code": "EVENT_NOT_FOUND", ... } }`.
 
+### PATCH /events/:id — SETTLED (STORY-014)
+
+- Gated by `requireRole(Role.EventManager)`, same as the other write routes
+  on Event.
+- Every field is optional (`eventFamilyType`, `status`, `eventManager`,
+  `clientContacts`) — a caller sends only what changed, same `PATCH`
+  semantics as `PATCH /users/:id`.
+- A submitted `clientContacts` array still needs at least one row — the
+  same "at least one Client Contact" rule `POST /events` enforces at create
+  time, restated here because *removing* the last row is exactly what this
+  endpoint has to reject. Violation is `400 VALIDATION_ERROR`.
+- **A field is only written, and only logged, when its submitted value
+  actually differs from what's stored.** A PATCH that resends identical
+  values for every field it includes writes zero Change Log Entries and
+  still returns `200` with the unchanged Event — not an error, not a no-op
+  log entry. This is the controller acting as the "caller" STORY-008's
+  `logChange` helper already assumes exists: the helper itself is
+  unchanged and would still write an entry if invoked with equal
+  `oldValue`/`newValue` (STORY-008's own documented behavior) — this
+  endpoint simply doesn't invoke it for a field that didn't change.
+- Editing several fields in one request writes one Change Log Entry per
+  *changed* field (not one entry summarizing the whole PATCH) — matches
+  STORY-008's "two calls for the same entity with different `field` values
+  always produce two separate entries."
+- `clientContacts` changes log the **full before/after array** as
+  `oldValue`/`newValue` (not a per-row diff) — same "store the full value,
+  simpler v1 choice" STORY-008 already made for exactly this field.
+- `event_manager` referencing a nonexistent or wrong-role User Account is a
+  `400 VALIDATION_ERROR` (`details: [{ field: "eventManager", ... }]`) —
+  identical shape and reasoning to `POST /events`'s same check; the update
+  is rejected wholesale (no partial write) when this happens.
+- Concurrent edits to the same Event by two Event Managers are **not**
+  reconciled — last write to reach the database wins, exactly as a plain
+  `findByIdAndUpdate` behaves with no extra locking. Deliberate
+  non-requirement for v1, not a bug; revisit only if real conflicting
+  concurrent edits turn out to matter in practice.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

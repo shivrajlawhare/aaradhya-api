@@ -314,6 +314,13 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** A PATCH that changes nothing (identical values submitted) — decide whether this still writes a Change Log Entry, and be consistent with STORY-008's documented behavior; concurrent edits to the same Event by two Event Managers (last-write-wins is acceptable for v1 — document it as a deliberate non-requirement, not a bug).
 
+**Decisions (v1):**
+- **A PATCH resending identical values writes no Change Log Entry.** STORY-008 documented that `logChange` itself always writes when *invoked*, even with `oldValue === newValue` — that's the helper staying "dumb" so its own behavior is predictable. This story is exactly the "caller" that line assumed would decide what's worth invoking it for: `updateEvent` compares each submitted field's value against what's currently stored and only calls `logChange` (and only `$set`s the field at all) when they genuinely differ. The two decisions don't conflict — the helper's contract is unchanged, only this endpoint's use of it is selective.
+- **Concurrent edits: last write wins, no locking, no conflict response.** A plain `findByIdAndUpdate` after loading the pre-update document for diffing is exactly last-write-wins already — nothing added or removed to get that behavior. Confirmed deliberate, not revisited unless real conflicts turn out to matter.
+- `client_contacts` changes log the **full before/after array**, not a per-row diff — same choice STORY-008 already made and demonstrated with this exact field as its example.
+- Removing the last Client Contact row is rejected via the **same Zod `.min(1)` shape** `POST /events` uses on its own `clientContacts`, just marked `.optional()` here for PATCH semantics — not a hand-rolled "count before vs. after" check in the controller.
+- Multiple changed fields in one PATCH write multiple Change Log Entries (one per field), consistent with STORY-008's "two calls, two entries" behavior — never one entry summarizing several field changes.
+
 ### STORY-015: Event Creation screen UI
 **Flow:** An Event Manager taps "New Event," fills family type, assigns themself or another manager, adds Client Contact rows, and submits.
 **Acceptance Criteria:**
