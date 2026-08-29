@@ -161,6 +161,20 @@ request shape, not which credential was wrong.
   reads/returns it yet; add it to the response shape when a story actually
   needs to address one row.
 
+### GET /events, GET /events/:id — SETTLED (STORY-013)
+
+- Both gated only by `authenticate` — no `requireRole`. Any authenticated
+  caller, regardless of role, gets the full Event document. Role-based field
+  filtering (e.g. hiding payment data from Reception) is a later story that
+  wraps this one; nothing here narrows the response yet.
+- `GET /events` returns a bare array (`200 [ eventResultSchema, ... ]`), same
+  shape/no-pagination convention as `GET /users` — no Event volume at
+  Aaradhya's scale needs paging yet.
+- `GET /events/:id` — malformed id (not 24 hex chars) is a `400
+  VALIDATION_ERROR` at the contract's `pathParams` schema, same convention as
+  `PATCH /users/:id`; a well-formed id with no matching Event is `404 {
+  "error": { "code": "EVENT_NOT_FOUND", ... } }`.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

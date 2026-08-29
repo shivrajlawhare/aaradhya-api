@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { apiErrorSchema } from './schemas/common.js';
 import { loginBodySchema, loginResultSchema } from './schemas/auth.js';
 import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/change-log.js';
-import { createEventBodySchema, eventResultSchema } from './schemas/event.js';
+import { createEventBodySchema, eventIdParamsSchema, eventResultSchema } from './schemas/event.js';
 import {
   createUserBodySchema,
   updateUserBodySchema,
@@ -89,5 +89,23 @@ export const contract = c.router({
       400: apiErrorSchema,
     },
     summary: 'Create an Event (Event Manager only)',
+  },
+  listEvents: {
+    method: 'GET',
+    path: '/events',
+    responses: {
+      200: z.array(eventResultSchema),
+    },
+    summary: 'List all Events (any authenticated caller)',
+  },
+  getEvent: {
+    method: 'GET',
+    path: '/events/:id',
+    pathParams: eventIdParamsSchema,
+    responses: {
+      200: eventResultSchema,
+      404: apiErrorSchema,
+    },
+    summary: 'Get one Event by id (any authenticated caller)',
   },
 });

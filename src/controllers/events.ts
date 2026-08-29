@@ -1,7 +1,15 @@
 import { Error as MongooseError } from 'mongoose';
-import type { AppRouteMutationImplementation } from '@ts-rest/express';
+import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from '@ts-rest/express';
+import type { ServerInferResponses } from '@ts-rest/core';
 import type { contract } from '../contract/index.js';
 import { Event, EventStatus, type EventDocument } from '../models/event.js';
+
+type GetEventResponse = ServerInferResponses<typeof contract.getEvent>;
+
+const eventNotFound: GetEventResponse = {
+  status: 404,
+  body: { error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' } },
+};
 
 const toPublicEvent = (event: EventDocument) => ({
   id: event.id,
@@ -73,4 +81,20 @@ export const createEvent: AppRouteMutationImplementation<typeof contract.createE
     }
     throw error;
   }
+};
+
+// No role restriction — that's a later story's job (per STORY-013's Flow:
+// "role-based field filtering is a separate later story"). Every field
+// STORY-011's schema persists is returned as-is to any authenticated caller.
+export const listEvents: AppRouteQueryImplementation<typeof contract.listEvents> = async () => {
+  const events = await Event.find().sort({ createdAt: 1 });
+  return { status: 200, body: events.map(toPublicEvent) };
+};
+
+export const getEvent: AppRouteQueryImplementation<typeof contract.getEvent> = async ({ params }) => {
+  const event = await Event.findById(params.id);
+  if (!event) {
+    return eventNotFound;
+  }
+  return { status: 200, body: toPublicEvent(event) };
 };

@@ -297,6 +297,11 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** Malformed `:id` (not a valid ObjectId/format) returns 400, not a 500.
 
+**Decisions (v1):**
+- Both routes are gated by `authenticate` only — no `requireRole` — matching the Flow's explicit statement that field filtering by role is a separate later story. Every field STORY-011's schema persists comes back to any authenticated caller.
+- `GET /events` reuses the no-pagination, bare-array convention `GET /users` already established — same reasoning (no volume at Aaradhya's scale that needs it yet).
+- Malformed `:id` is validated at the contract's `pathParams` schema (reusing the `objectIdSchema` helper STORY-012 extracted), not in the handler — same "malformed vs. well-formed-but-missing are different failures" split `PATCH /users/:id` already uses (400 vs. 404).
+
 ### STORY-014: PATCH /events/:id (core fields + Client Contacts)
 **Flow:** An Event Manager edits an Event's family type, status, assigned manager, or adds/edits/removes Client Contact rows; each changed field is logged via STORY-008.
 **Acceptance Criteria:**

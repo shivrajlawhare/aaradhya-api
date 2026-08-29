@@ -37,6 +37,12 @@ const validPayload = (managerId: string, overrides: Record<string, unknown> = {}
 const createEventAs = (token: string, body: object) =>
   request(app).post('/events').set('Authorization', `Bearer ${token}`).send(body);
 
+const listEventsAs = (token: string) =>
+  request(app).get('/events').set('Authorization', `Bearer ${token}`);
+
+const getEventAs = (token: string, id: string) =>
+  request(app).get(`/events/${id}`).set('Authorization', `Bearer ${token}`);
+
 beforeAll(connectTestDb);
 afterEach(clearCollections);
 afterAll(disconnectTestDb);
@@ -222,5 +228,114 @@ describe('POST /events', () => {
 
     expect(response.status).toBe(201);
     expect(response.body.eventManager).toBe(inactiveManager.id);
+  });
+});
+
+describe('GET /events', () => {
+  it('returns 401 with no token', async () => {
+    const response = await request(app).get('/events');
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 200 for any authenticated role (%s) — no role restriction yet',
+    async (role) => {
+      const { token } = await seedCaller(role);
+
+      const response = await listEventsAs(token);
+
+      expect(response.status).toBe(200);
+    },
+  );
+
+  it('returns every Event with its core fields', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    await createEventAs(token, validPayload(manager.id));
+    await createEventAs(token, validPayload(manager.id, { eventFamilyType: 'Corporate Offsite' }));
+
+    const response = await listEventsAs(token);
+
+    expect(response.status).toBe(200);
+    expect(Array.isArray(response.body)).toBe(true);
+    expect(response.body).toHaveLength(2);
+    expect(response.body.map((event: { eventFamilyType: string }) => event.eventFamilyType).sort()).toEqual(
+      ['Corporate Offsite', 'Wedding'],
+    );
+    for (const event of response.body) {
+      expect(event).toMatchObject({
+        id: expect.any(String),
+        eventId: expect.stringMatching(/^ARD-EVT-\d{4}-\d{3}$/),
+        status: EventStatus.Tentative,
+        eventManager: manager.id,
+      });
+    }
+  });
+
+  it('returns an empty array, not a 404, when no Events exist', async () => {
+    const { token } = await seedCaller();
+
+    const response = await listEventsAs(token);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
+});
+
+describe('GET /events/:id', () => {
+  it('returns 401 with no token', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await request(app).get(`/events/${created.body.id}`);
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 200 for any authenticated role (%s) — no role restriction yet',
+    async (role) => {
+      const manager = await seedEventManager();
+      const creatorToken = await signSessionToken({ id: manager.id, role: manager.role });
+      const created = await createEventAs(creatorToken, validPayload(manager.id));
+      const { token } = await seedCaller(role);
+
+      const response = await getEventAs(token, created.body.id);
+
+      expect(response.status).toBe(200);
+    },
+  );
+
+  it('returns the Event matching the given id', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(created.body);
+  });
+
+  it('returns 404 for a well-formed but nonexistent id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await getEventAs(token, '507f1f77bcf86cd799439011');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' },
+    });
+  });
+
+  it('returns 400, not 500, for a malformed id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await getEventAs(token, 'not-an-id');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
   });
 });

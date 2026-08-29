@@ -12,6 +12,10 @@ const clientContactInputSchema = z.object({
   role: z.nativeEnum(ClientContactRole),
 });
 
+export const eventIdParamsSchema = z.object({
+  id: objectIdSchema('Invalid event id.'),
+});
+
 export const createEventBodySchema = z.object({
   eventFamilyType: z.string().trim().min(1),
   // Optional — FR-EVT-1 names "initial status" as a creation input, so a

@@ -2,7 +2,7 @@ import { initServer } from '@ts-rest/express';
 import { contract } from './contract/index.js';
 import { login } from './controllers/auth.js';
 import { listChangeLog } from './controllers/change-log.js';
-import { createEvent } from './controllers/events.js';
+import { createEvent, getEvent, listEvents } from './controllers/events.js';
 import { checkHealth } from './controllers/health.js';
 import { createUser, listUsers, updateUser } from './controllers/users.js';
 import { authenticate, requireRole } from './middleware/auth.js';
@@ -11,6 +11,9 @@ import { Role } from './models/user.js';
 const server = initServer();
 
 const eventManagerOnly = [authenticate, requireRole(Role.EventManager)];
+// No role restriction — any authenticated caller (STORY-013's Flow: field
+// filtering by role is a separate later story).
+const authenticatedOnly = [authenticate];
 
 export const router = server.router(contract, {
   getHealth: checkHealth,
@@ -34,5 +37,13 @@ export const router = server.router(contract, {
   createEvent: {
     middleware: eventManagerOnly,
     handler: createEvent,
+  },
+  listEvents: {
+    middleware: authenticatedOnly,
+    handler: listEvents,
+  },
+  getEvent: {
+    middleware: authenticatedOnly,
+    handler: getEvent,
   },
 });
