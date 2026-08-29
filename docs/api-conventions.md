@@ -202,6 +202,12 @@ request shape, not which credential was wrong.
   tab needed to read current checklist state; STORY-024 only added the
   PATCH). Reuses STORY-024's own `toPublicDocumentsChecklist`, so the
   shape is identical to that PATCH endpoint's response body.
+- **`eventResultSchema` includes `sessions` as of STORY-029**, the fourth
+  occurrence of the same retroactive-addition pattern (STORY-029's Session
+  form needed both a way to read current Session data for the "edit" entry
+  point and a real list to add to). Reuses STORY-027's own `toPublicSession`
+  — each array element carries the same derived `durationDays`/`isMultiDay`
+  fields the sub-resource routes already return.
 
 ### PATCH /events/:id — SETTLED (STORY-014)
 

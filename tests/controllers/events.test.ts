@@ -451,6 +451,33 @@ describe('GET /events/:id', () => {
     });
   });
 
+  it('includes sessions, defaulting to an empty array for a freshly created Event', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.sessions).toEqual([]);
+  });
+
+  it('reflects a prior POST /events/:id/sessions, including derived fields', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await postSessionAs(token, created.body.id, validSessionPayload());
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.sessions).toHaveLength(1);
+    expect(response.body.sessions[0]).toMatchObject({
+      sessionType: 'Wedding',
+      venue: 'Lawn',
+      durationDays: 1,
+      isMultiDay: false,
+    });
+  });
+
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
 

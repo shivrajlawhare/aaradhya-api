@@ -235,13 +235,14 @@ export const sessionResultSchema = z.object({
 
 // The public Event shape — everything STORY-011's schema persists, plus the
 // Accommodation Block (STORY-018/019), the Payment Record (STORY-021/022),
-// and the Documents Checklist (STORY-024). GET /events/:id (STORY-013)
-// exposed none of them at first — each was added the moment a UI story
-// actually needed to read the current state on first render (STORY-020 for
-// accommodation, STORY-023 for payment, now STORY-025 for the checklist —
-// exactly the recurrence flagged in STORY-024's own Decisions). Additive
-// only: one more field on an already-public response, reusing STORY-024's
-// own toPublicDocumentsChecklist — not a new concept, not a breaking change.
+// the Documents Checklist (STORY-024), and now Sessions (STORY-026/027/028).
+// GET /events/:id (STORY-013) exposed none of them at first — each was
+// added the moment a UI story actually needed to read the current state on
+// first render (STORY-020 for accommodation, STORY-023 for payment,
+// STORY-025 for the checklist, now STORY-029 for sessions — the fourth
+// occurrence of the recurrence flagged in STORY-028's own Decisions).
+// Additive only: one more field on an already-public response, reusing
+// STORY-027's own toPublicSession — not a new concept, not a breaking change.
 export const eventResultSchema = z.object({
   id: z.string(),
   eventId: z.string(),
@@ -252,6 +253,7 @@ export const eventResultSchema = z.object({
   accommodation: accommodationResultSchema,
   payment: paymentResultSchema,
   documentsChecklist: documentsChecklistResultSchema,
+  sessions: z.array(sessionResultSchema),
   createdBy: z.string(),
   createdAt: z.date(),
   updatedAt: z.date(),

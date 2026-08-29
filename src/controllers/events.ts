@@ -118,13 +118,55 @@ const toPublicDocumentsChecklist = (checklist: DocumentsChecklistAttributes) => 
   weddingCard: checklist.weddingCard,
 });
 
-// accommodation/payment/documentsChecklist reuse toPublicAccommodation
-// (STORY-019)/toPublicPayment (STORY-022)/toPublicDocumentsChecklist
-// (STORY-024) — GET /events/:id exposed none of them until a UI story
+// The hydrated element type of EventDocument['sessions'] — a real Mongoose
+// subdocument (Document methods like `.set()`/`.deleteOne()` included), not
+// the plain SessionAttributes interface. Indexed off EventDocument itself
+// rather than hand-reconstructed, so it always matches whatever Mongoose
+// actually infers for a Types.DocumentArray element.
+type SessionSubdocument = EventDocument['sessions'][number];
+
+const toPublicSessionSetup = (setup: SessionSetupAttributes) => ({
+  seating: setup.seating ?? null,
+  tableCount: setup.tableCount,
+  chairCount: setup.chairCount,
+  stage: setup.stage,
+  buffet: setup.buffet,
+  registrationDesk: setup.registrationDesk,
+  vipSeating: setup.vipSeating,
+  brideGroomSeating: setup.brideGroomSeating,
+  notes: setup.notes ?? null,
+});
+
+// durationDays/isMultiDay reuse STORY-026's own computeDurationDays/
+// computeIsMultiDay — never stored, always freshly computed from whatever
+// startDate/endDate are currently on the Session, same "derived, never
+// trusted from the client" convention totalDays (accommodation) and
+// balance (payment) already established. Reads `_id` (not `.id`) — a
+// Types.DocumentArray's own subdocument type only declares `_id` typed
+// (Types.ObjectId), unlike a top-level HydratedDocument which also gets a
+// typed `.id` string virtual.
+const toPublicSession = (session: SessionSubdocument) => ({
+  id: session._id.toString(),
+  sessionType: session.sessionType,
+  venue: session.venue,
+  venueCost: session.venueCost,
+  startDate: session.startDate,
+  endDate: session.endDate,
+  startTime: session.startTime ?? null,
+  endTime: session.endTime ?? null,
+  pax: session.pax,
+  sessionStatus: session.sessionStatus,
+  durationDays: computeDurationDays(session),
+  isMultiDay: computeIsMultiDay(session),
+  setup: toPublicSessionSetup(session.setup),
+});
+
+// accommodation/payment/documentsChecklist/sessions each reuse their own
+// toPublicX helper — GET /events/:id exposed none of them until a UI story
 // actually needed to read current state on first render (STORY-020 for
-// accommodation, STORY-023 for payment, now STORY-025 for the checklist).
-// Additive only: every existing consumer of this shape just gets more
-// fields.
+// accommodation, STORY-023 for payment, STORY-025 for the checklist, now
+// STORY-029 for sessions). Additive only: every existing consumer of this
+// shape just gets more fields.
 const toPublicEvent = (event: EventDocument) => ({
   id: event.id,
   eventId: event.eventId,
@@ -139,6 +181,7 @@ const toPublicEvent = (event: EventDocument) => ({
   accommodation: toPublicAccommodation(event.accommodation),
   payment: toPublicPayment(event.payment),
   documentsChecklist: toPublicDocumentsChecklist(event.documentsChecklist),
+  sessions: event.sessions.map(toPublicSession),
   createdBy: event.createdBy.toString(),
   createdAt: event.createdAt,
   updatedAt: event.updatedAt,
@@ -618,49 +661,6 @@ const invalidSessionDateRange: Extract<CreateSessionResponse, { status: 400 }> =
 const isInvalidSessionDateRangeError = (error: unknown): boolean =>
   error instanceof MongooseError.ValidationError &&
   Object.keys(error.errors).some((path) => path.endsWith('.endDate'));
-
-// The hydrated element type of EventDocument['sessions'] — a real Mongoose
-// subdocument (Document methods like `.set()`/`.deleteOne()` included), not
-// the plain SessionAttributes interface. Indexed off EventDocument itself
-// rather than hand-reconstructed, so it always matches whatever Mongoose
-// actually infers for a Types.DocumentArray element.
-type SessionSubdocument = EventDocument['sessions'][number];
-
-const toPublicSessionSetup = (setup: SessionSetupAttributes) => ({
-  seating: setup.seating ?? null,
-  tableCount: setup.tableCount,
-  chairCount: setup.chairCount,
-  stage: setup.stage,
-  buffet: setup.buffet,
-  registrationDesk: setup.registrationDesk,
-  vipSeating: setup.vipSeating,
-  brideGroomSeating: setup.brideGroomSeating,
-  notes: setup.notes ?? null,
-});
-
-// durationDays/isMultiDay reuse STORY-026's own computeDurationDays/
-// computeIsMultiDay — never stored, always freshly computed from whatever
-// startDate/endDate are currently on the Session, same "derived, never
-// trusted from the client" convention totalDays (accommodation) and
-// balance (payment) already established. Reads `_id` (not `.id`) — a
-// Types.DocumentArray's own subdocument type only declares `_id` typed
-// (Types.ObjectId), unlike a top-level HydratedDocument which also gets a
-// typed `.id` string virtual.
-const toPublicSession = (session: SessionSubdocument) => ({
-  id: session._id.toString(),
-  sessionType: session.sessionType,
-  venue: session.venue,
-  venueCost: session.venueCost,
-  startDate: session.startDate,
-  endDate: session.endDate,
-  startTime: session.startTime ?? null,
-  endTime: session.endTime ?? null,
-  pax: session.pax,
-  sessionStatus: session.sessionStatus,
-  durationDays: computeDurationDays(session),
-  isMultiDay: computeIsMultiDay(session),
-  setup: toPublicSessionSetup(session.setup),
-});
 
 // No session_status accepted at creation — a newly added Session always
 // starts Active (sessionSchema's own default), matching this story's Flow

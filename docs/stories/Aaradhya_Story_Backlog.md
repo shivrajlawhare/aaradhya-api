@@ -551,6 +551,10 @@ Built early because every write in every later module needs it. Placed here, not
 - **A distinct `SESSION_NOT_FOUND` 404**, not a reused `EVENT_NOT_FOUND` — a stale `:sid` on a real Event is a genuinely different failure than a nonexistent `:id`, and the distinction costs nothing extra to implement.
 - **`204` with `c.noBody()` on the response only (not the request)** — ts-rest v3 treats a `DELETE` route with no `body` key at all as its own `AppRouteDeleteNoBody` contract variant, implemented with the same no-body handler shape a `GET` route uses (`AppRouteQueryImplementation`), despite the HTTP method being `DELETE`. Adding an explicit `body: c.noBody()` to match `POST`/`PATCH`'s shape actually breaks this — it re-classifies the route as `AppRouteMutation`, which then requires the mutation handler shape instead. First `DELETE`/first `204` in this API; this quirk is worth remembering the next time one's added.
 
+**Decisions (v1) — aaradhya-api side of STORY-029:**
+- Same gap as STORY-020/STORY-023/STORY-025: `GET /events/:id` never returned `sessions`, and no story had added a dedicated GET for it (STORY-027 only added the POST, STORY-028 the PATCH/DELETE). Fixed minimally — `sessions` (via STORY-027's own `toPublicSession`, mapped over the array) added to the already-public `eventResultSchema`/`toPublicEvent()`, additive only, verified against the full existing suite before this frontend work continued. `toPublicSession`/`toPublicSessionSetup`/the `SessionSubdocument` type alias moved above `toPublicEvent` for correct dependency order, same relocation every prior instance of this fix has needed.
+- No role-filtering concern here — the SRS doesn't restrict Session visibility by role; every role's own "Sees:" list (§3.2-3.4) includes fields that live on Session (venue, pax, date(s), and Housekeeping's "seating/setup requirements").
+
 ### STORY-029: Session Creation/Edit form UI
 **Flow:** An Event Manager adds or edits a Session: picks type and venue (cost auto-fills, editable), sets the date range and times, enters pax, and fills the setup fields — all on one mobile-first form.
 **Acceptance Criteria:**
