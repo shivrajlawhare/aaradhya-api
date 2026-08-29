@@ -2,13 +2,27 @@ import { Error as MongooseError } from 'mongoose';
 import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from '@ts-rest/express';
 import type { ServerInferRequest, ServerInferResponses } from '@ts-rest/core';
 import type { contract } from '../contract/index.js';
-import { Event, EventStatus, type ClientContactAttributes, type EventDocument } from '../models/event.js';
+import {
+  Event,
+  EventStatus,
+  type AccommodationAttributes,
+  type ClientContactAttributes,
+  type EventDocument,
+  type RoomLineAttributes,
+} from '../models/event.js';
+import {
+  computeRoomLineTotalInclGst,
+  computeTotalCharges,
+  computeTotalDays,
+  computeTotalOccupancy,
+} from '../services/accommodation.js';
 import { logChange } from '../services/change-log.js';
 
 type CreateEventResponse = ServerInferResponses<typeof contract.createEvent>;
 type GetEventResponse = ServerInferResponses<typeof contract.getEvent>;
 type UpdateEventResponse = ServerInferResponses<typeof contract.updateEvent>;
 type UpdateEventBody = ServerInferRequest<typeof contract.updateEvent>['body'];
+type UpdateEventAccommodationBody = ServerInferRequest<typeof contract.updateEventAccommodation>['body'];
 
 // Narrow (single-member), not the whole per-route union, so the same
 // constant can be returned from any handler whose response union happens to
@@ -63,6 +77,44 @@ const areClientContactsEqual = (
   stored: ClientContactAttributes[],
   submitted: ClientContactAttributes[],
 ): boolean => JSON.stringify(stored.map(toPlainContact)) === JSON.stringify(submitted.map(toPlainContact));
+
+// checkIn/checkOut/totalDays are nullable, not just absent — an Event can
+// genuinely have no accommodation entered yet (accommodation itself is
+// optional on the Event, STORY-018). totalOccupancy/totalCharges default to
+// 0 for an empty roomLines array — "no rooms" is a valid, common case
+// (STORY-019's own edge case), not an error state.
+const toPublicAccommodation = (accommodation: AccommodationAttributes | undefined) => {
+  const checkIn = accommodation?.checkIn ?? null;
+  const checkOut = accommodation?.checkOut ?? null;
+  const roomLines = accommodation?.roomLines ?? [];
+
+  return {
+    checkIn,
+    checkOut,
+    totalDays: checkIn && checkOut ? computeTotalDays(checkIn, checkOut) : null,
+    roomLines: roomLines.map((line) => ({
+      roomType: line.roomType,
+      occupancy: line.occupancy,
+      tariff: line.tariff,
+      noOfRooms: line.noOfRooms,
+      totalInclGst: computeRoomLineTotalInclGst(line),
+    })),
+    totalOccupancy: computeTotalOccupancy(roomLines),
+    totalCharges: computeTotalCharges(roomLines),
+  };
+};
+
+// Drops the subdocument's own `_id` so a stored room line compares equal to
+// a plain submitted line shaped the same as roomLineInputSchema.
+const toPlainRoomLine = ({ roomType, occupancy, tariff, noOfRooms }: RoomLineAttributes) => ({
+  roomType,
+  occupancy,
+  tariff,
+  noOfRooms,
+});
+
+const areRoomLinesEqual = (stored: RoomLineAttributes[], submitted: RoomLineAttributes[]): boolean =>
+  JSON.stringify(stored.map(toPlainRoomLine)) === JSON.stringify(submitted.map(toPlainRoomLine));
 
 // STORY-011's schema already rejects an event_manager that doesn't resolve
 // to an existing EventManager-role User Account via a custom validator on
@@ -231,4 +283,98 @@ export const updateEvent: AppRouteMutationImplementation<typeof contract.updateE
   );
 
   return { status: 200, body: toPublicEvent(updated) };
+};
+
+const areDatesEqual = (a: Date | undefined, b: Date | undefined): boolean =>
+  (a?.getTime() ?? null) === (b?.getTime() ?? null);
+
+// checkIn/checkOut/roomLines are the three "fields" tracked here — one
+// Change Log Entry per changed field, same granularity STORY-014 already
+// uses for the rest of the Event (a whole-array change to roomLines is one
+// entry with the full before/after array, not one entry per room line,
+// exactly mirroring how clientContacts is logged). The logged roomLines
+// value is the raw stored shape only — never totalInclGst, since that's
+// never stored (STORY-018) and logging a transient, always-recomputed value
+// would misrepresent what's actually persisted.
+const buildAccommodationUpdate = (
+  existing: EventDocument,
+  body: UpdateEventAccommodationBody,
+): { update: Record<string, unknown>; changes: PendingChange[] } => {
+  const currentAccommodation = existing.accommodation;
+  const update: Record<string, unknown> = {};
+  const changes: PendingChange[] = [];
+
+  if (body.checkIn !== undefined && !areDatesEqual(body.checkIn, currentAccommodation?.checkIn)) {
+    update['accommodation.checkIn'] = body.checkIn;
+    changes.push({ field: 'checkIn', oldValue: currentAccommodation?.checkIn ?? null, newValue: body.checkIn });
+  }
+  if (body.checkOut !== undefined && !areDatesEqual(body.checkOut, currentAccommodation?.checkOut)) {
+    update['accommodation.checkOut'] = body.checkOut;
+    changes.push({
+      field: 'checkOut',
+      oldValue: currentAccommodation?.checkOut ?? null,
+      newValue: body.checkOut,
+    });
+  }
+  if (
+    body.roomLines !== undefined &&
+    !areRoomLinesEqual(currentAccommodation?.roomLines ?? [], body.roomLines)
+  ) {
+    update['accommodation.roomLines'] = body.roomLines;
+    changes.push({
+      field: 'roomLines',
+      oldValue: (currentAccommodation?.roomLines ?? []).map(toPlainRoomLine),
+      newValue: body.roomLines,
+    });
+  }
+
+  return { update, changes };
+};
+
+// Same last-write-wins, no-locking stance STORY-014 already documented for
+// the rest of the Event — nothing here adds optimistic concurrency either.
+export const updateEventAccommodation: AppRouteMutationImplementation<
+  typeof contract.updateEventAccommodation
+> = async ({ params, body, req }) => {
+  if (!req.user) {
+    // Unreachable — eventManagerOnly (router.ts) runs authenticate before
+    // this handler ever does; guarded instead of asserted past.
+    throw new Error('updateEventAccommodation handler ran without an authenticated user.');
+  }
+  const changedByUserId = req.user.id;
+
+  const existing = await Event.findById(params.id);
+  if (!existing) {
+    return eventNotFound;
+  }
+
+  const { update, changes } = buildAccommodationUpdate(existing, body);
+
+  if (changes.length === 0) {
+    return { status: 200, body: toPublicAccommodation(existing.accommodation) };
+  }
+
+  const updated = await Event.findByIdAndUpdate(params.id, update, {
+    returnDocument: 'after',
+    runValidators: true,
+  });
+  if (!updated) {
+    return eventNotFound;
+  }
+  const eventId = updated.id;
+
+  await Promise.all(
+    changes.map((change) =>
+      logChange({
+        entityType: 'Event',
+        entityId: eventId,
+        field: change.field,
+        oldValue: change.oldValue,
+        newValue: change.newValue,
+        changedByUserId,
+      }),
+    ),
+  );
+
+  return { status: 200, body: toPublicAccommodation(updated.accommodation) };
 };

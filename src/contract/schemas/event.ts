@@ -61,3 +61,41 @@ export const eventResultSchema = z.object({
   createdAt: z.date(),
   updatedAt: z.date(),
 });
+
+const roomLineInputSchema = z.object({
+  roomType: z.string().trim().min(1),
+  occupancy: z.number().min(0),
+  tariff: z.number().min(0),
+  // A no_of_rooms of 0 is a valid placeholder row — STORY-018's own
+  // decision, matching the Mongoose schema's `min: 0` (not `min: 1`).
+  noOfRooms: z.number().min(0),
+});
+
+// Every field optional (PATCH semantics) — a caller sends only what
+// changed. z.coerce.date() accepts the ISO string a JSON body actually
+// carries; an unparseable value still fails as an invalid date.
+export const updateAccommodationBodySchema = z.object({
+  checkIn: z.coerce.date().optional(),
+  checkOut: z.coerce.date().optional(),
+  roomLines: z.array(roomLineInputSchema).optional(),
+});
+
+const roomLineResultSchema = roomLineInputSchema.extend({
+  // Derived (STORY-018's computeRoomLineTotalInclGst) — never accepted as
+  // input, always present on output.
+  totalInclGst: z.number(),
+});
+
+// The public Accommodation Block shape — checkIn/checkOut/totalDays are
+// nullable, not just optional, since a caller can genuinely have no
+// accommodation entered yet (STORY-018: accommodation itself is optional on
+// the Event). roomLines/totalOccupancy/totalCharges default to an empty/zero
+// state instead, since "no rooms" is itself a valid, common case.
+export const accommodationResultSchema = z.object({
+  checkIn: z.date().nullable(),
+  checkOut: z.date().nullable(),
+  totalDays: z.number().nullable(),
+  roomLines: z.array(roomLineResultSchema),
+  totalOccupancy: z.number(),
+  totalCharges: z.number(),
+});

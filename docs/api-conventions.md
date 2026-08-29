@@ -212,6 +212,34 @@ request shape, not which credential was wrong.
   non-requirement for v1, not a bug; revisit only if real conflicting
   concurrent edits turn out to matter in practice.
 
+### PATCH /events/:id/accommodation — SETTLED (STORY-019)
+
+- Gated by `requireRole(Role.EventManager)`, same as the other write routes
+  on Event.
+- Every field is optional (`checkIn`, `checkOut`, `roomLines`) — same PATCH
+  semantics as `PATCH /events/:id`.
+- The **response body is the Accommodation Block itself**, not the parent
+  Event — `{ checkIn, checkOut, totalDays, roomLines: [{ roomType,
+  occupancy, tariff, noOfRooms, totalInclGst }], totalOccupancy,
+  totalCharges }`. `checkIn`/`checkOut`/`totalDays` are `null`, not omitted,
+  when no accommodation has been entered yet.
+- `totalDays`, per-line `totalInclGst`, `totalOccupancy`, and `totalCharges`
+  are **always freshly computed from the just-updated document** (STORY-018's
+  pure functions) — never stored, so a submitted value for any of them
+  (`{ "totalCharges": 999999 }`, say) is silently ignored, not
+  validated-and-rejected: the response schema simply doesn't accept those
+  keys as input at all.
+- `roomLines` as `[]` is a valid, ordinary request — an Accommodation Block
+  with zero rooms, not an error; every total computes to `0`.
+- Each of `checkIn`/`checkOut`/`roomLines` that actually changes writes its
+  own Change Log Entry (same "one entry per changed field" granularity
+  `PATCH /events/:id` already uses) — a whole-array change to `roomLines` is
+  ONE entry with the full before/after array (matching how `clientContacts`
+  is logged), not one entry per room line. The logged `roomLines` value is
+  always the raw stored shape (`roomType`/`occupancy`/`tariff`/`noOfRooms`)
+  — never `totalInclGst`, since that's never stored and logging a transient,
+  always-recomputed value would misrepresent what's actually persisted.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

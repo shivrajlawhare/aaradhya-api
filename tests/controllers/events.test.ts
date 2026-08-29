@@ -47,6 +47,9 @@ const getEventAs = (token: string, id: string) =>
 const patchEventAs = (token: string, id: string, body: object) =>
   request(app).patch(`/events/${id}`).set('Authorization', `Bearer ${token}`).send(body);
 
+const patchAccommodationAs = (token: string, id: string, body: object) =>
+  request(app).patch(`/events/${id}/accommodation`).set('Authorization', `Bearer ${token}`).send(body);
+
 beforeAll(connectTestDb);
 afterEach(clearCollections);
 afterAll(disconnectTestDb);
@@ -528,5 +531,208 @@ describe('PATCH /events/:id', () => {
     expect(response.body.error.details).toEqual(
       expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })]),
     );
+  });
+});
+
+describe('PATCH /events/:id/accommodation', () => {
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+
+    const response = await request(app)
+      .patch(`/events/${created.body.id}/accommodation`)
+      .send({ roomLines: [] });
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(creatorToken, validPayload(manager.id));
+      const { token } = await seedCaller(role);
+
+      const response = await patchAccommodationAs(token, created.body.id, { roomLines: [] });
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchAccommodationAs(token, '507f1f77bcf86cd799439011', { roomLines: [] });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' },
+    });
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchAccommodationAs(token, 'not-an-id', { roomLines: [] });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('sets check_in/check_out and room_lines, returning freshly computed derived fields', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchAccommodationAs(token, created.body.id, {
+      checkIn: '2026-06-15T00:00:00.000Z',
+      checkOut: '2026-06-16T00:00:00.000Z',
+      roomLines: [
+        { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2 },
+        { roomType: 'Suite', occupancy: 4, tariff: 12000, noOfRooms: 1 },
+      ],
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.totalDays).toBe(2);
+    expect(response.body.totalOccupancy).toBe(8); // (2*2) + (4*1)
+    // Double: 5000*2*1.18=11800; Suite: 12000*1*1.18=14160; sum=25960.
+    expect(response.body.totalCharges).toBe(25960);
+    expect(response.body.roomLines).toEqual([
+      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2, totalInclGst: 11800 },
+      { roomType: 'Suite', occupancy: 4, tariff: 12000, noOfRooms: 1, totalInclGst: 14160 },
+    ]);
+  });
+
+  it('allows room_lines as an empty array — totals compute to zero, not an error', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchAccommodationAs(token, created.body.id, { roomLines: [] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.roomLines).toEqual([]);
+    expect(response.body.totalOccupancy).toBe(0);
+    expect(response.body.totalCharges).toBe(0);
+  });
+
+  it('ignores a submitted total_charges (or any other derived field) — response always reflects the server-computed value', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchAccommodationAs(token, created.body.id, {
+      roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }],
+      totalCharges: 999999,
+      totalOccupancy: 999999,
+      totalDays: 999999,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.totalCharges).toBe(5900); // 5000*1*1.18, not 999999
+    expect(response.body.totalOccupancy).toBe(2);
+  });
+
+  it('returns freshly computed totals reflecting the edit, not stale pre-edit values', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchAccommodationAs(token, created.body.id, {
+      roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }],
+    });
+
+    const response = await patchAccommodationAs(token, created.body.id, {
+      roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 3 }],
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.totalCharges).toBe(17700); // 5000*3*1.18, not the earlier 5900
+  });
+
+  it('leaves check_in/check_out untouched when only room_lines is submitted', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchAccommodationAs(token, created.body.id, {
+      checkIn: '2026-06-15T00:00:00.000Z',
+      checkOut: '2026-06-16T00:00:00.000Z',
+      roomLines: [],
+    });
+
+    const response = await patchAccommodationAs(token, created.body.id, {
+      roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }],
+    });
+
+    expect(response.status).toBe(200);
+    expect(new Date(response.body.checkIn).toISOString()).toBe('2026-06-15T00:00:00.000Z');
+    expect(new Date(response.body.checkOut).toISOString()).toBe('2026-06-16T00:00:00.000Z');
+  });
+
+  it('writes one Change Log Entry per changed field (check_in, check_out, room_lines)', async () => {
+    const { caller, token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchAccommodationAs(token, created.body.id, {
+      checkIn: '2026-06-15T00:00:00.000Z',
+      checkOut: '2026-06-16T00:00:00.000Z',
+      roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }],
+    });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries.map((entry) => entry.field).sort()).toEqual(['checkIn', 'checkOut', 'roomLines']);
+    for (const entry of entries) {
+      expect(entry.changedBy).toBe(caller.id);
+    }
+  });
+
+  it("logs room_lines' raw stored shape only, never the derived total_incl_gst", async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    await patchAccommodationAs(token, created.body.id, {
+      roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }],
+    });
+
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id, field: 'roomLines' });
+    expect(entries).toHaveLength(1);
+    const [entry] = entries;
+    if (!entry) {
+      throw new Error('expected exactly one roomLines Change Log Entry');
+    }
+    expect(entry.oldValue).toEqual([]);
+    expect(entry.newValue).toEqual([{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }]);
+  });
+
+  it('writes no Change Log Entry for a PATCH that resubmits identical room_lines', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const roomLines = [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }];
+    await patchAccommodationAs(token, created.body.id, { roomLines });
+
+    const response = await patchAccommodationAs(token, created.body.id, { roomLines });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id, field: 'roomLines' });
+    expect(entries).toHaveLength(1); // only the first PATCH's entry, not a second
+  });
+
+  it('rejects a room line with a negative no_of_rooms as 400', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchAccommodationAs(token, created.body.id, {
+      roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: -1 }],
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
   });
 });

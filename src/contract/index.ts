@@ -4,9 +4,11 @@ import { apiErrorSchema } from './schemas/common.js';
 import { loginBodySchema, loginResultSchema } from './schemas/auth.js';
 import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/change-log.js';
 import {
+  accommodationResultSchema,
   createEventBodySchema,
   eventIdParamsSchema,
   eventResultSchema,
+  updateAccommodationBodySchema,
   updateEventBodySchema,
 } from './schemas/event.js';
 import {
@@ -124,5 +126,16 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: 'Edit core fields and/or Client Contacts on an Event (Event Manager only)',
+  },
+  updateEventAccommodation: {
+    method: 'PATCH',
+    path: '/events/:id/accommodation',
+    pathParams: eventIdParamsSchema,
+    body: updateAccommodationBodySchema,
+    responses: {
+      200: accommodationResultSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Edit an Event's Accommodation Block (Event Manager only)",
   },
 });

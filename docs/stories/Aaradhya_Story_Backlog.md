@@ -386,6 +386,14 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** Submitting `room_lines` as an empty array (Accommodation with zero rooms — allowed, since not every Event needs guest rooms; totals should compute to zero, not error).
 
+**Decisions (v1):**
+- **The response is the Accommodation Block itself, not the parent Event** — `PATCH /events/:id/accommodation` is a sub-resource route, so it returns that sub-resource, matching REST convention rather than nesting it inside a full Event body.
+- **"Response always reflects the server-computed value" is satisfied structurally, not by a runtime override**: the request body schema simply has no `totalCharges`/`totalOccupancy`/`totalDays`/`totalInclGst` keys at all, so a caller submitting them has nothing to override — the response is built entirely from STORY-018's pure functions run against the just-updated document.
+- **`checkIn`/`checkOut`/`roomLines` are the three tracked "fields"**, at the exact same granularity `PATCH /events/:id` already uses for the rest of the Event — one Change Log Entry per changed field, and a whole-array `roomLines` change is ONE entry with the full before/after array (mirroring how `clientContacts` is logged), not one entry per room line. "Adding/removing/editing a room line" in the AC reads as "the roomLines field changed," the same way STORY-014 already treats any `clientContacts` edit as one field-level change.
+- **The logged `roomLines` value is the raw stored shape only, never `totalInclGst`** — that value is never stored (STORY-018), so logging it would put a transient, always-recomputed number into a permanent audit record, which could read as if it had been a real stored value at that point in time.
+- **A no-op PATCH (identical `roomLines`) writes no Change Log Entry**, matching STORY-014's exact "the caller decides whether a change is real before invoking `logChange`" precedent — restated here rather than re-decided.
+- **`checkIn`/`checkOut` values round-trip through `z.coerce.date()`** on input and plain `Date` on output (matching every other date field in this contract) — this is the first endpoint in the app to accept a date as request input, not just return one.
+
 ### STORY-020: Accommodation (Rooms) tab UI
 **Flow:** An Event Manager opens the Rooms tab, edits check-in/out and room lines, and sees every derived total update live from the server response — no client-side math.
 **Acceptance Criteria:**
