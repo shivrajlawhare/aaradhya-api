@@ -346,6 +346,68 @@ describe('Event model', () => {
     },
   );
 
+  it('defaults payment to 0/unset for a brand-new Event with no payment activity', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+    });
+
+    expect(event.payment).toMatchObject({
+      totalEstimatedAmount: 0,
+      advanceRequired: 0,
+      advancePaid: 0,
+    });
+    expect(event.payment.advancePaidDate).toBeUndefined();
+    expect(event.payment.paymentMode).toBeUndefined();
+  });
+
+  it('accepts a fully populated Payment Record', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      payment: {
+        totalEstimatedAmount: 50000,
+        advanceRequired: 20000,
+        advancePaid: 20000,
+        advancePaidDate: new Date('2026-05-01'),
+        paymentMode: 'UPI',
+      },
+    });
+
+    expect(event.payment).toMatchObject({
+      totalEstimatedAmount: 50000,
+      advanceRequired: 20000,
+      advancePaid: 20000,
+      paymentMode: 'UPI',
+    });
+    expect(event.payment.advancePaidDate).toEqual(new Date('2026-05-01'));
+  });
+
+  it.each(['totalEstimatedAmount', 'advanceRequired', 'advancePaid'])(
+    'rejects a negative %s — money in cannot be negative',
+    async (field) => {
+      const manager = await createEventManager();
+
+      const error = await expectValidationError(Event, {
+        eventFamilyType: 'Wedding',
+        status: EventStatus.Tentative,
+        eventManager: manager.id,
+        createdBy: manager.id,
+        payment: { [field]: -1 },
+      });
+
+      expect(error.errors).toHaveProperty(`payment.${field}`);
+    },
+  );
+
   it.each(['eventFamilyType', 'status', 'eventManager', 'createdBy'])(
     'rejects a document missing %s',
     async (field) => {

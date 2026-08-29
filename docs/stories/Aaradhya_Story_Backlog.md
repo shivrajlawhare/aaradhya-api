@@ -416,6 +416,14 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** Negative `advance_paid` input (reject at the schema/endpoint level — money in can't be negative).
 
+**Decisions (v1):**
+- **`payment` is always instantiated with defaulted fields, unlike `accommodation`** — a deliberate difference from STORY-018's "optional, may be entirely absent" choice. This story's own AC frames it as "fields default to 0/unset," not "the record may not exist yet," so `payment` uses Mongoose's `default: () => ({})` to guarantee a brand-new Event always has `payment.totalEstimatedAmount === 0` etc. without STORY-012's create endpoint needing any change.
+- **`balance` is never stored**, same reasoning as every derived value in this schema so far (STORY-018's totals) — `src/services/payment.ts` computes it on demand; nothing persisted can drift out of sync with `total_estimated_amount`/`advance_paid` if it's never written down.
+- **`min: 0` applies to all three money fields** (`total_estimated_amount`, `advance_required`, `advance_paid`), not just `advance_paid` — the edge case only names `advance_paid`, but "money in can't be negative" applies just as much to an estimate or a required-advance figure; none of the three can sensibly go negative.
+- **`payment_mode` is a free-text string, not an enum** — the SRS gives no fixed list for it (unlike `event_family_type`), matching the same "no list given → stay open" call already made for `room_type`.
+- **`payment_status` (mentioned in SRS §4.4 alongside `balance`) is deliberately not built here** — this story's own Flow/AC never names it, only the five listed fields plus `balance`; adding it now would be scope beyond what was actually asked for.
+- **Extracted `roundToCurrency` to `src/utils/currency.ts`**, shared by `services/accommodation.ts` and this story's `services/payment.ts` — the second real caller of the exact same rounding logic, the trigger `directory-structure.md` names for moving something into `utils/`.
+
 ### STORY-022: PATCH /events/:id/payment
 **Flow:** An Event Manager records/updates payment fields; `balance` is recomputed server-side on every write.
 **Acceptance Criteria:**

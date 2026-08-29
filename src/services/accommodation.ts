@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { roundToCurrency } from '../utils/currency.js';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -26,11 +27,6 @@ export interface RoomLineInput {
 // schema/endpoint concern for STORY-019, not this pure-math function's job.
 export const computeTotalDays = (checkIn: Date, checkOut: Date): number =>
   Math.floor((checkOut.getTime() - checkIn.getTime()) / MS_PER_DAY) + 1;
-
-// Rounds to whole paise/cents — repeated floating-point addition of GST-
-// inclusive amounts (e.g. 0.1 + 0.2) can otherwise drift by fractions of a
-// currency unit.
-const roundToCurrency = (amount: number): number => Math.round(amount * 100) / 100;
 
 // tariff × no_of_rooms, GST-inclusive at the org's single flat rate
 // (config.gstRatePercent — SRS Assumption A9's "single organization-wide

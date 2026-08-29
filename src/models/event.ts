@@ -51,6 +51,23 @@ export interface AccommodationAttributes {
   roomLines: RoomLineAttributes[];
 }
 
+// SRS §4.4 — the single event-level Payment Record, Event Manager
+// visibility only (enforced by whichever endpoint/response shape reads
+// this, not by the schema itself). Unlike accommodation, this sub-object
+// always exists with defaulted fields (see the `default: () => ({})`
+// below) — the story's own AC frames it as fields defaulting to 0/unset,
+// not the whole record being absent. `balance` is deliberately absent
+// here: it's derived (src/services/payment.ts), never stored.
+export interface PaymentAttributes {
+  totalEstimatedAmount: number;
+  advanceRequired: number;
+  advancePaid: number;
+  advancePaidDate?: Date;
+  // Free text, not an enum — SRS gives no fixed list for this field
+  // (unlike, say, event_family_type), so the schema stays open.
+  paymentMode?: string;
+}
+
 export interface EventAttributes {
   eventId: string;
   // Free text, not an enum — FR-EVT-1 wants a "dropdown + custom" input, so
@@ -60,6 +77,7 @@ export interface EventAttributes {
   eventManager: Types.ObjectId;
   clientContacts: ClientContactAttributes[];
   accommodation?: AccommodationAttributes;
+  payment: PaymentAttributes;
   createdBy: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -85,6 +103,21 @@ const accommodationSchema = new Schema<AccommodationAttributes>(
     checkIn: { type: Date },
     checkOut: { type: Date },
     roomLines: { type: [roomLineSchema], default: [] },
+  },
+  { _id: false },
+);
+
+// min: 0 on every money field — "money in can't be negative" (this story's
+// own edge case, stated for advance_paid) applies just as much to the
+// estimate and the required advance; none of the three can sensibly be
+// negative.
+const paymentSchema = new Schema<PaymentAttributes>(
+  {
+    totalEstimatedAmount: { type: Number, required: true, default: 0, min: 0 },
+    advanceRequired: { type: Number, required: true, default: 0, min: 0 },
+    advancePaid: { type: Number, required: true, default: 0, min: 0 },
+    advancePaidDate: { type: Date },
+    paymentMode: { type: String, trim: true },
   },
   { _id: false },
 );
@@ -116,6 +149,12 @@ const eventSchema = new Schema<EventAttributes>(
     // anything that needs an Event shape without that create-time rule.
     clientContacts: { type: [clientContactSchema], default: [] },
     accommodation: { type: accommodationSchema },
+    // Always instantiated, even if never supplied at creation — the
+    // default factory runs Mongoose's own nested-schema defaults, so a
+    // brand-new Event gets payment.totalEstimatedAmount/advanceRequired/
+    // advancePaid all at 0 without STORY-012's create endpoint needing to
+    // set anything (this story's own AC: "fields default to 0/unset").
+    payment: { type: paymentSchema, required: true, default: () => ({}) },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true },
