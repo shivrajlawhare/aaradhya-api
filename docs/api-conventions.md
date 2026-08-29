@@ -183,6 +183,20 @@ request shape, not which credential was wrong.
   endpoint's response body — purely additive, every existing consumer of
   `eventResultSchema` (`POST /events`, `GET /events`, `PATCH /events/:id`)
   just gained one more field.
+- **`eventResultSchema` includes `payment` as of STORY-023**, same
+  retroactive-addition pattern and same reason (STORY-023's Payments tab
+  needed to read current payment state; STORY-022 only added the PATCH).
+  This is the field this section's own first bullet already named as the
+  concrete example of the still-deferred role-filtering work — the SRS
+  states Payment Record visibility as "Event Manager only" (§4.4) and
+  separately states Reception explicitly "does not see... payment data"
+  (§3.4). That gap was already flagged and accepted back at STORY-013 as
+  "a later story that wraps this one"; adding `payment` here doesn't widen
+  it, it's the exact scenario that framing already anticipated. `GET
+  /events/:id` still has no role restriction at all — every role can
+  currently read `payment` via the raw API even though STORY-023's UI
+  never renders the tab for them. Module 5.5 (Role-Based Dashboards &
+  Views) is where this actually gets closed.
 
 ### PATCH /events/:id — SETTLED (STORY-014)
 

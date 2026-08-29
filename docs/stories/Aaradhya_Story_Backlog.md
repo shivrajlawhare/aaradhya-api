@@ -450,6 +450,10 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** `surface-2`, `accent-deep` (balance emphasis when negative/outstanding), `type-title-m`, tabular-nums, `space-12`.
 **Edge cases:** A very large amount value (formatting must not overflow the card on a narrow viewport).
 
+**Decisions (v1) — aaradhya-api side of this story:**
+- Same gap as STORY-020: `GET /events/:id` never returned `payment`, and no story had added a dedicated GET for it (STORY-022 only added the PATCH). Fixed minimally — `payment` (via STORY-022's own `toPublicPayment`) added to the already-public `eventResultSchema`/`toPublicEvent()`, additive only, verified against the full existing suite before this frontend work continued.
+- This is the concrete instance of the role-filtering gap `docs/api-conventions.md`'s `GET /events, GET /events/:id` section already flagged back at STORY-013 ("hiding payment data from Reception is a later story that wraps this one"). `GET /events/:id` still has no role restriction — every authenticated role can currently read `payment` via the raw API, even though this story's UI never renders the tab for non-EventManager sessions. Deliberately not fixed here — that's Module 5.5 (Role-Based Dashboards & Views)'s job, not this story's.
+
 ### STORY-024: Documents Checklist schema + PATCH endpoint
 **Flow:** An Event Manager toggles each of the six fixed Document Checklist items (Aadhar, PAN, Leaving/Birth Certificate, Ration Card, passport photos, Wedding Card) to Yes/No.
 **Acceptance Criteria:**

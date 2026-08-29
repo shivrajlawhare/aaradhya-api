@@ -362,6 +362,38 @@ describe('GET /events/:id', () => {
     expect(response.body.accommodation.totalCharges).toBe(5900);
   });
 
+  it('includes payment, defaulting to 0/null for a freshly created Event', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.payment).toEqual({
+      totalEstimatedAmount: 0,
+      advanceRequired: 0,
+      advancePaid: 0,
+      advancePaidDate: null,
+      paymentMode: null,
+      balance: 0,
+    });
+  });
+
+  it('reflects a prior PATCH /events/:id/payment edit', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchPaymentAs(token, created.body.id, { totalEstimatedAmount: 50000, advancePaid: 20000 });
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.payment).toMatchObject({
+      totalEstimatedAmount: 50000,
+      advancePaid: 20000,
+      balance: 30000,
+    });
+  });
+
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
 

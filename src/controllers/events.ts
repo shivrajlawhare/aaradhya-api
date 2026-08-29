@@ -78,11 +78,24 @@ const toPublicAccommodation = (accommodation: AccommodationAttributes | undefine
   };
 };
 
-// accommodation reuses toPublicAccommodation (STORY-019) — GET /events/:id
-// never exposed it until STORY-020 needed a way to read the current
-// Accommodation Block on first render of the Rooms tab; no prior story had
-// added a GET for it. Additive only: every existing consumer of this shape
-// just gets one more field.
+// advancePaidDate/paymentMode are nullable, not just absent — matching
+// accommodation's checkIn/checkOut convention. balance is always freshly
+// computed from whatever totalEstimatedAmount/advancePaid are currently
+// stored, never itself stored (STORY-021).
+const toPublicPayment = (payment: PaymentAttributes) => ({
+  totalEstimatedAmount: payment.totalEstimatedAmount,
+  advanceRequired: payment.advanceRequired,
+  advancePaid: payment.advancePaid,
+  advancePaidDate: payment.advancePaidDate ?? null,
+  paymentMode: payment.paymentMode ?? null,
+  balance: computeBalance(payment.totalEstimatedAmount, payment.advancePaid),
+});
+
+// accommodation/payment reuse toPublicAccommodation (STORY-019)/
+// toPublicPayment (STORY-022) — GET /events/:id exposed neither until a UI
+// story actually needed to read current state on first render (STORY-020
+// for accommodation, STORY-023 for payment). Additive only: every existing
+// consumer of this shape just gets more fields.
 const toPublicEvent = (event: EventDocument) => ({
   id: event.id,
   eventId: event.eventId,
@@ -95,6 +108,7 @@ const toPublicEvent = (event: EventDocument) => ({
     role: contact.role,
   })),
   accommodation: toPublicAccommodation(event.accommodation),
+  payment: toPublicPayment(event.payment),
   createdBy: event.createdBy.toString(),
   createdAt: event.createdAt,
   updatedAt: event.updatedAt,
@@ -387,19 +401,6 @@ export const updateEventAccommodation: AppRouteMutationImplementation<
 
   return { status: 200, body: toPublicAccommodation(updated.accommodation) };
 };
-
-// advancePaidDate/paymentMode are nullable, not just absent — matching
-// accommodation's checkIn/checkOut convention. balance is always freshly
-// computed from whatever totalEstimatedAmount/advancePaid are currently
-// stored, never itself stored (STORY-021).
-const toPublicPayment = (payment: PaymentAttributes) => ({
-  totalEstimatedAmount: payment.totalEstimatedAmount,
-  advanceRequired: payment.advanceRequired,
-  advancePaid: payment.advancePaid,
-  advancePaidDate: payment.advancePaidDate ?? null,
-  paymentMode: payment.paymentMode ?? null,
-  balance: computeBalance(payment.totalEstimatedAmount, payment.advancePaid),
-});
 
 // Five tracked fields, one Change Log Entry per changed field — same
 // granularity every other PATCH on Event uses. No cross-field validation
