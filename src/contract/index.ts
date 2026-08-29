@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { apiErrorSchema } from './schemas/common.js';
 import { loginBodySchema, loginResultSchema } from './schemas/auth.js';
 import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/change-log.js';
+import { createEventBodySchema, eventResultSchema } from './schemas/event.js';
 import {
   createUserBodySchema,
   updateUserBodySchema,
@@ -78,5 +79,15 @@ export const contract = c.router({
       200: z.array(changeLogEntryResultSchema),
     },
     summary: 'List Change Log Entries for one entity (Event Manager only)',
+  },
+  createEvent: {
+    method: 'POST',
+    path: '/events',
+    body: createEventBodySchema,
+    responses: {
+      201: eventResultSchema,
+      400: apiErrorSchema,
+    },
+    summary: 'Create an Event (Event Manager only)',
   },
 });

@@ -2,6 +2,7 @@ import { initServer } from '@ts-rest/express';
 import { contract } from './contract/index.js';
 import { login } from './controllers/auth.js';
 import { listChangeLog } from './controllers/change-log.js';
+import { createEvent } from './controllers/events.js';
 import { checkHealth } from './controllers/health.js';
 import { createUser, listUsers, updateUser } from './controllers/users.js';
 import { authenticate, requireRole } from './middleware/auth.js';
@@ -29,5 +30,9 @@ export const router = server.router(contract, {
   listChangeLog: {
     middleware: eventManagerOnly,
     handler: listChangeLog,
+  },
+  createEvent: {
+    middleware: eventManagerOnly,
+    handler: createEvent,
   },
 });

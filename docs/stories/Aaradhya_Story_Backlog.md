@@ -280,6 +280,13 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** A `client_contacts` row with a name but no `contactNumber` (decide: allowed or required — document the choice); assigning `event_manager` to a user account that is `active: false`.
 
+**Decisions (v1):**
+- `contactNumber` is **required** on every `client_contacts` row, not optional — matches STORY-011's Mongoose schema, which already requires it per row. Making it optional at the contract layer would just let a request through the 400 gate here only to fail as a raw Mongoose `ValidationError` one line later inside `Event.create`; requiring it up front keeps the failure a clean, single `400 VALIDATION_ERROR`.
+- Assigning `event_manager` to a **deactivated** (`active: false`) User Account is **allowed**, not rejected — this restates STORY-011's already-built behavior (its reference validator checks `role`, not `active`) rather than introducing anything new. Consistent with STORY-006's decision that `active` enforcement lives solely in `authenticate`'s live re-check on every request.
+- `status` is **optional and honored when present** — not always forced to `Tentative` regardless of input. FR-EVT-1 lists "initial status" as a real creation input alongside `event_family_type` and `event_manager`; this AC's "status defaults to Tentative" reads as "the default when absent," not "the endpoint ignores any status the caller sends."
+- The invalid-`event_manager` case (nonexistent id, or a real id whose role isn't `EventManager`) is surfaced as `400 VALIDATION_ERROR` with `details: [{ field: "eventManager", ... }]` — the same code every other bad-body field uses, rather than a new bespoke code, even though the check itself runs as a Mongoose validator after the request already cleared the contract's own Zod schema.
+- The response's `client_contacts` rows carry no `id` field yet — STORY-011 kept Mongoose's default per-row `_id` for future edit/remove support, but nothing in this story reads or returns it; adding it now with no consumer would be speculative, so it's deferred to whichever future story actually addresses one row.
+
 ### STORY-013: GET /events, GET /events/:id
 **Flow:** Any authenticated user retrieves the full Event list or a single Event by id (role-based field filtering is a separate later story — this one returns the full document to any authenticated caller, as the foundation those filters wrap).
 **Acceptance Criteria:**

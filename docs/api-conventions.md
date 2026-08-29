@@ -132,6 +132,35 @@ request shape, not which credential was wrong.
   Aaradhya's scale (SRS §6.1). Revisit if a single event's change history
   ever gets large enough to matter — see `Pagination — OPEN` below.
 
+### POST /events — SETTLED (STORY-012)
+
+- Gated by `requireRole(Role.EventManager)`, same as the STORY-005/006/008/009 routes.
+- `status` is optional in the request body and defaults to `Tentative` when absent —
+  not always forced to `Tentative`. FR-EVT-1 names "initial status" as a real
+  creation input, so a caller may open an Event directly as e.g. `Confirmed`.
+- `client_contacts` must have at least one row, and every row's `name` and
+  `contactNumber` must be non-empty — this is where FR-EVT-1's "at least one
+  Client Contact" rule is actually enforced (STORY-011's Mongoose schema itself
+  allows zero rows, so it stays reusable outside this endpoint). Both violations
+  surface as the standard `400 VALIDATION_ERROR`.
+- `event_manager` referencing a nonexistent User Account, or one whose role
+  isn't `EventManager`, is also a `400 VALIDATION_ERROR` (`details: [{ field:
+  "eventManager", ... }]`) — reusing the same code as any other bad-body field
+  rather than inventing a new one, even though this particular check runs as a
+  Mongoose validator (STORY-011) after the request already passed the
+  contract's Zod schema, not inside that schema itself.
+- `event_manager` may reference a User Account that is currently
+  `active: false` — allowed, not rejected. Consistent with STORY-006/011: only
+  `authenticate` enforces `active` (on every request, re-checked live), so
+  nothing that merely stores a user reference re-implements that check.
+- `created_by` always comes from `req.user.id`; any `createdBy` sent in the
+  request body is silently ignored, never persisted.
+- `201` body is `eventResultSchema` (`src/contract/schemas/event.ts`). Client
+  Contact rows in the response carry no `id` — STORY-011's schema keeps
+  Mongoose's default per-row `_id` for later edit/remove support, but nothing
+  reads/returns it yet; add it to the response shape when a story actually
+  needs to address one row.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

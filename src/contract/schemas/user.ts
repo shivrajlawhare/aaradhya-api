@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Role } from '../../models/user.js';
+import { objectIdSchema } from './common.js';
 
 /**
  * `name`/`username`/`password` all reject blank-after-trim values, not just a
@@ -26,11 +27,8 @@ export const userResultSchema = z.object({
   updatedAt: z.date(),
 });
 
-// Standard 24-hex-char Mongo ObjectId shape. A malformed id is a 400
-// (VALIDATION_ERROR, caught by the global handler) — "not shaped like an id"
-// and "shaped like an id but doesn't exist" (404) are different failures.
 export const userIdParamsSchema = z.object({
-  id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid user id.'),
+  id: objectIdSchema('Invalid user id.'),
 });
 
 // Both fields optional and independently settable — a caller may send just
