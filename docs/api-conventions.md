@@ -197,6 +197,11 @@ request shape, not which credential was wrong.
   currently read `payment` via the raw API even though STORY-023's UI
   never renders the tab for them. Module 5.5 (Role-Based Dashboards &
   Views) is where this actually gets closed.
+- **`eventResultSchema` includes `documentsChecklist` as of STORY-025**,
+  same retroactive-addition pattern a third time (STORY-025's Documents
+  tab needed to read current checklist state; STORY-024 only added the
+  PATCH). Reuses STORY-024's own `toPublicDocumentsChecklist`, so the
+  shape is identical to that PATCH endpoint's response body.
 
 ### PATCH /events/:id — SETTLED (STORY-014)
 
@@ -316,10 +321,10 @@ request shape, not which credential was wrong.
 - Each toggled item writes its own Change Log Entry — same "one entry per
   changed field" granularity every other Event PATCH uses; toggling two
   items in one request writes two entries, not one.
-- `GET /events/:id` does **not** yet include `documentsChecklist` — no
-  story has needed to read it yet. Expect this to recur exactly the way it
-  did for `accommodation` (STORY-020) and `payment` (STORY-023), the first
-  time a story needs to display current checklist state.
+- `GET /events/:id` includes `documentsChecklist` as of STORY-025 — the
+  same recurrence flagged here already happened, exactly the way it did
+  for `accommodation` (STORY-020) and `payment` (STORY-023); see the
+  `GET /events, GET /events/:id` section above.
 
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 

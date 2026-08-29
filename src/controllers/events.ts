@@ -94,11 +94,22 @@ const toPublicPayment = (payment: PaymentAttributes) => ({
   balance: computeBalance(payment.totalEstimatedAmount, payment.advancePaid),
 });
 
-// accommodation/payment reuse toPublicAccommodation (STORY-019)/
-// toPublicPayment (STORY-022) — GET /events/:id exposed neither until a UI
-// story actually needed to read current state on first render (STORY-020
-// for accommodation, STORY-023 for payment). Additive only: every existing
-// consumer of this shape just gets more fields.
+const toPublicDocumentsChecklist = (checklist: DocumentsChecklistAttributes) => ({
+  aadharCard: checklist.aadharCard,
+  panCard: checklist.panCard,
+  leavingBirthCertificate: checklist.leavingBirthCertificate,
+  rationCard: checklist.rationCard,
+  passportPhotos: checklist.passportPhotos,
+  weddingCard: checklist.weddingCard,
+});
+
+// accommodation/payment/documentsChecklist reuse toPublicAccommodation
+// (STORY-019)/toPublicPayment (STORY-022)/toPublicDocumentsChecklist
+// (STORY-024) — GET /events/:id exposed none of them until a UI story
+// actually needed to read current state on first render (STORY-020 for
+// accommodation, STORY-023 for payment, now STORY-025 for the checklist).
+// Additive only: every existing consumer of this shape just gets more
+// fields.
 const toPublicEvent = (event: EventDocument) => ({
   id: event.id,
   eventId: event.eventId,
@@ -112,6 +123,7 @@ const toPublicEvent = (event: EventDocument) => ({
   })),
   accommodation: toPublicAccommodation(event.accommodation),
   payment: toPublicPayment(event.payment),
+  documentsChecklist: toPublicDocumentsChecklist(event.documentsChecklist),
   createdBy: event.createdBy.toString(),
   createdAt: event.createdAt,
   updatedAt: event.updatedAt,
@@ -499,15 +511,6 @@ export const updateEventPayment: AppRouteMutationImplementation<typeof contract.
 
   return { status: 200, body: toPublicPayment(updated.payment) };
 };
-
-const toPublicDocumentsChecklist = (checklist: DocumentsChecklistAttributes) => ({
-  aadharCard: checklist.aadharCard,
-  panCard: checklist.panCard,
-  leavingBirthCertificate: checklist.leavingBirthCertificate,
-  rationCard: checklist.rationCard,
-  passportPhotos: checklist.passportPhotos,
-  weddingCard: checklist.weddingCard,
-});
 
 // Unlike buildEventUpdate/buildAccommodationUpdate/buildPaymentUpdate, this
 // loops over DOCUMENT_CHECKLIST_ITEM_KEYS instead of repeating one `if`

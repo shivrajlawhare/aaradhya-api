@@ -471,6 +471,10 @@ Built early because every write in every later module needs it. Placed here, not
 - **The update-diff logic loops over `DOCUMENT_CHECKLIST_ITEM_KEYS`** rather than repeating one `if` block per field by hand (`buildEventUpdate`/`buildAccommodationUpdate`/`buildPaymentUpdate`'s shape) — every item here is a plain boolean with the same `!==` comparison, so there's no per-field custom logic (date/array/ObjectId compares) forcing it into that more repetitive pattern the way the other three needed.
 - **`GET /events/:id` does not yet include `documentsChecklist`** — deliberately not pulled forward, consistent with the same choice made for `accommodation` and `payment`. Flagged here explicitly: expect the same retroactive-addition fix once STORY-025 (Documents tab UI) needs to read current checklist state on load.
 
+**Decisions (v1) — aaradhya-api side of STORY-025:**
+- Same gap as STORY-020/STORY-023: `GET /events/:id` never returned `documentsChecklist`, and no story had added a dedicated GET for it (STORY-024 only added the PATCH). Fixed minimally — `documentsChecklist` (via STORY-024's own `toPublicDocumentsChecklist`) added to the already-public `eventResultSchema`/`toPublicEvent()`, additive only, verified against the full existing suite before this frontend work continued.
+- No role-filtering concern here unlike `payment` — the SRS doesn't restrict Documents Checklist visibility by role, so this addition doesn't touch the still-deferred Module 5.5 work.
+
 ### STORY-025: Documents Checklist tab UI
 **Flow:** An Event Manager opens the Documents tab and checks off items as they're physically received.
 **Acceptance Criteria:**

@@ -397,6 +397,41 @@ describe('GET /events/:id', () => {
     });
   });
 
+  it('includes documentsChecklist, defaulting to all-false for a freshly created Event', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.documentsChecklist).toEqual({
+      aadharCard: false,
+      panCard: false,
+      leavingBirthCertificate: false,
+      rationCard: false,
+      passportPhotos: false,
+      weddingCard: false,
+    });
+  });
+
+  it('reflects a prior PATCH /events/:id/documents edit', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchDocumentsChecklistAs(token, created.body.id, { aadharCard: true, panCard: true });
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.documentsChecklist).toEqual({
+      aadharCard: true,
+      panCard: true,
+      leavingBirthCertificate: false,
+      rationCard: false,
+      passportPhotos: false,
+      weddingCard: false,
+    });
+  });
+
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
 
