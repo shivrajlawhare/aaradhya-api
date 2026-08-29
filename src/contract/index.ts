@@ -10,12 +10,14 @@ import {
   documentsChecklistResultSchema,
   eventIdParamsSchema,
   eventResultSchema,
+  eventSessionParamsSchema,
   paymentResultSchema,
   sessionResultSchema,
   updateAccommodationBodySchema,
   updateDocumentsChecklistBodySchema,
   updateEventBodySchema,
   updateEventPaymentBodySchema,
+  updateSessionBodySchema,
 } from './schemas/event.js';
 import {
   createUserBodySchema,
@@ -177,5 +179,27 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: 'Add a Session to an Event (Event Manager only)',
+  },
+  updateSession: {
+    method: 'PATCH',
+    path: '/events/:id/sessions/:sid',
+    pathParams: eventSessionParamsSchema,
+    body: updateSessionBodySchema,
+    responses: {
+      200: sessionResultSchema,
+      400: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Edit one of an Event's Sessions (Event Manager only)",
+  },
+  deleteSession: {
+    method: 'DELETE',
+    path: '/events/:id/sessions/:sid',
+    pathParams: eventSessionParamsSchema,
+    responses: {
+      204: c.noBody(),
+      404: apiErrorSchema,
+    },
+    summary: "Remove one of an Event's Sessions (Event Manager only)",
   },
 });

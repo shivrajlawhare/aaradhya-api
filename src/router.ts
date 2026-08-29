@@ -5,12 +5,14 @@ import { listChangeLog } from './controllers/change-log.js';
 import {
   createEvent,
   createSession,
+  deleteSession,
   getEvent,
   listEvents,
   updateDocumentsChecklist,
   updateEvent,
   updateEventAccommodation,
   updateEventPayment,
+  updateSession,
 } from './controllers/events.js';
 import { checkHealth } from './controllers/health.js';
 import { createUser, listUsers, updateUser } from './controllers/users.js';
@@ -74,5 +76,13 @@ export const router = server.router(contract, {
   createSession: {
     middleware: eventManagerOnly,
     handler: createSession,
+  },
+  updateSession: {
+    middleware: eventManagerOnly,
+    handler: updateSession,
+  },
+  deleteSession: {
+    middleware: eventManagerOnly,
+    handler: deleteSession,
   },
 });

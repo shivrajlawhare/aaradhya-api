@@ -379,6 +379,52 @@ request shape, not which credential was wrong.
   STORY-023, `documentsChecklist` → STORY-025) to recur a fourth time once
   a UI story needs to display current Session data.
 
+### PATCH/DELETE /events/:id/sessions/:sid — SETTLED (STORY-028)
+
+- Gated by `requireRole(Role.EventManager)`, same as the other write routes
+  on Event. Path carries two ids — `:id` (the Event) and `:sid` (the
+  Session, STORY-027's own generated sub-id) — a well-formed `:id` that
+  doesn't resolve to an Event is `404 EVENT_NOT_FOUND`; a well-formed `:id`
+  that does, paired with a `:sid` that doesn't match any Session on it, is
+  a distinct `404 SESSION_NOT_FOUND` (a stale link, an already-deleted
+  Session, or a `:sid` belonging to a different Event entirely).
+- `PATCH` — every field optional, same PATCH semantics as every other
+  sub-resource route. Unlike `POST /events/:id/sessions`,
+  **`session_status` is accepted here** — setting it to `Cancelled`
+  succeeds independently of the parent Event's own `status` (this story's
+  own AC); nothing in this controller ever inspects `Event.status` before
+  writing a Session field.
+- **`end_date >= start_date` is re-validated on every update**, not only at
+  creation — the handler mutates the live subdocument in memory and calls
+  `.save()` (not a raw `$set`/`findByIdAndUpdate`), so `sessionSchema`'s
+  own field-level validator (STORY-026) runs the exact same way it did on
+  `POST /events/:id/sessions`; a rejected range reuses that route's own
+  `invalidSessionDateRange`/`isInvalidSessionDateRangeError` machinery
+  unchanged.
+- **Each changed field writes its own Change Log Entry, with `field`
+  prefixed by the Session's identity**: `sessions[<session_type>].<field>`
+  (e.g. `sessions[Wedding].endDate`) — the identity is the Session's
+  `sessionType` **before** this request's edits are applied (even a
+  `sessionType` change itself uses the old name), so the Activity tab can
+  tell which Session an entry belongs to. The per-field name segment stays
+  **camelCase** (`endDate`, not `end_date`) to match every Change Log Entry
+  this controller has ever written — the story text's own `end_date`
+  example is that document's prose convention (the SRS writes every field
+  name that way throughout), not a wire-format instruction.
+- **`setup` is diffed and logged as one whole field**, not per nested key —
+  the same "a compound sub-value is one field" convention `roomLines`
+  (Accommodation) already established. A caller resends the entire `setup`
+  it wants; a sparse patch of only the sub-fields that changed is not
+  supported (matches `roomLines`' own whole-array-replace semantics).
+- **`DELETE` returns `204` with no body**, the first `DELETE` — and first
+  `204` — in this API. No Change Log Entry is written for a deletion, same
+  "creation isn't logged, only edits are" precedent `POST /events` and
+  `POST /events/:id/sessions` already established, applied symmetrically.
+- **Deleting an Event's only remaining Session is allowed** (this story's
+  own edge case) — an Event with zero Sessions is a valid, if incomplete,
+  draft state; nothing here enforces an "at least one Session" rule. It
+  simply won't appear on the calendar per STORY-034's exclusion rule.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

@@ -59,6 +59,12 @@ const patchDocumentsChecklistAs = (token: string, id: string, body: object) =>
 const postSessionAs = (token: string, id: string, body: object) =>
   request(app).post(`/events/${id}/sessions`).set('Authorization', `Bearer ${token}`).send(body);
 
+const patchSessionAs = (token: string, id: string, sid: string, body: object) =>
+  request(app).patch(`/events/${id}/sessions/${sid}`).set('Authorization', `Bearer ${token}`).send(body);
+
+const deleteSessionAs = (token: string, id: string, sid: string) =>
+  request(app).delete(`/events/${id}/sessions/${sid}`).set('Authorization', `Bearer ${token}`);
+
 const validSessionPayload = (overrides: Record<string, unknown> = {}) => ({
   sessionType: 'Wedding',
   venue: 'Lawn',
@@ -1354,5 +1360,256 @@ describe('POST /events/:id/sessions', () => {
     const response = await postSessionAs(token, created.body.id, validSessionPayload());
 
     expect(response.status).toBe(201);
+  });
+});
+
+describe('PATCH /events/:id/sessions/:sid', () => {
+  const seedEventWithSession = async (token: string, overrides: Record<string, unknown> = {}) => {
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload(overrides));
+    return { eventId: created.body.id, sessionId: session.body.id };
+  };
+
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(creatorToken);
+
+    const response = await request(app).patch(`/events/${eventId}/sessions/${sessionId}`).send({ pax: 250 });
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const { eventId, sessionId } = await seedEventWithSession(creatorToken);
+      const { token } = await seedCaller(role);
+
+      const response = await patchSessionAs(token, eventId, sessionId, { pax: 250 });
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent event id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchSessionAs(token, '507f1f77bcf86cd799439011', '507f1f77bcf86cd799439012', {
+      pax: 250,
+    });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' },
+    });
+  });
+
+  it('returns 404 for a well-formed but nonexistent session id on an existing Event', async () => {
+    const { token } = await seedCaller();
+    const { eventId } = await seedEventWithSession(token);
+
+    const response = await patchSessionAs(token, eventId, '507f1f77bcf86cd799439012', { pax: 250 });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'SESSION_NOT_FOUND', message: 'No Session with that id on this Event.' },
+    });
+  });
+
+  it('returns 400 for a malformed event id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchSessionAs(token, 'not-an-id', '507f1f77bcf86cd799439012', { pax: 250 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 400 for a malformed session id', async () => {
+    const { token } = await seedCaller();
+    const { eventId } = await seedEventWithSession(token);
+
+    const response = await patchSessionAs(token, eventId, 'not-an-id', { pax: 250 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('persists an edited field, reflected in the response', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    const response = await patchSessionAs(token, eventId, sessionId, { pax: 250 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.pax).toBe(250);
+  });
+
+  it('re-validates end_date >= start_date on every update, not just at creation', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token, {
+      startDate: '2026-06-15',
+      endDate: '2026-06-15',
+    });
+
+    const response = await patchSessionAs(token, eventId, sessionId, { endDate: '2026-06-14' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(response.body.error.details).toEqual([
+      { field: 'endDate', message: 'end_date must be on or after start_date.' },
+    ]);
+  });
+
+  it('accepts widening the date range so end_date remains on/after the new start_date', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token, {
+      startDate: '2026-06-15',
+      endDate: '2026-06-15',
+    });
+
+    const response = await patchSessionAs(token, eventId, sessionId, { endDate: '2026-06-17' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.durationDays).toBe(3);
+    expect(response.body.isMultiDay).toBe(true);
+  });
+
+  it('writes one Change Log Entry per changed field, scoped with the session identity', async () => {
+    const { caller, token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token, { sessionType: 'Wedding' });
+
+    const response = await patchSessionAs(token, eventId, sessionId, { pax: 250, venue: 'Poolside' });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: eventId });
+    expect(entries.map((entry) => entry.field).sort()).toEqual([
+      'sessions[Wedding].pax',
+      'sessions[Wedding].venue',
+    ]);
+    for (const entry of entries) {
+      expect(entry.changedBy).toBe(caller.id);
+    }
+  });
+
+  it('writes no Change Log Entry for a PATCH that resubmits the same value', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token, { pax: 200 });
+
+    const response = await patchSessionAs(token, eventId, sessionId, { pax: 200 });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: eventId });
+    expect(entries).toHaveLength(0);
+  });
+
+  it('sets session_status to Cancelled independently of the parent Event status', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id, { status: EventStatus.Confirmed }));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload());
+
+    const response = await patchSessionAs(token, created.body.id, session.body.id, {
+      sessionStatus: 'Cancelled',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.sessionStatus).toBe('Cancelled');
+    const eventCheck = await getEventAs(token, created.body.id);
+    expect(eventCheck.body.status).toBe('Confirmed');
+  });
+});
+
+describe('DELETE /events/:id/sessions/:sid', () => {
+  const seedEventWithSession = async (token: string) => {
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload());
+    return { eventId: created.body.id, sessionId: session.body.id };
+  };
+
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(creatorToken);
+
+    const response = await request(app).delete(`/events/${eventId}/sessions/${sessionId}`);
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const { eventId, sessionId } = await seedEventWithSession(creatorToken);
+      const { token } = await seedCaller(role);
+
+      const response = await deleteSessionAs(token, eventId, sessionId);
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent event id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await deleteSessionAs(token, '507f1f77bcf86cd799439011', '507f1f77bcf86cd799439012');
+
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 404 for a well-formed but nonexistent session id', async () => {
+    const { token } = await seedCaller();
+    const { eventId } = await seedEventWithSession(token);
+
+    const response = await deleteSessionAs(token, eventId, '507f1f77bcf86cd799439012');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'SESSION_NOT_FOUND', message: 'No Session with that id on this Event.' },
+    });
+  });
+
+  it('returns 400 for a malformed session id', async () => {
+    const { token } = await seedCaller();
+    const { eventId } = await seedEventWithSession(token);
+
+    const response = await deleteSessionAs(token, eventId, 'not-an-id');
+
+    expect(response.status).toBe(400);
+  });
+
+  it('removes the session from the array — a subsequent GET no longer includes it', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    const response = await deleteSessionAs(token, eventId, sessionId);
+
+    expect(response.status).toBe(204);
+    const event = await Event.findById(eventId);
+    expect(event?.sessions).toHaveLength(0);
+  });
+
+  it("allows deleting an Event's only Session — a zero-Session Event is a valid draft state", async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    const response = await deleteSessionAs(token, eventId, sessionId);
+
+    expect(response.status).toBe(204);
+    const event = await Event.findById(eventId);
+    expect(event?.sessions).toEqual([]);
+  });
+
+  it('writes no Change Log Entry — deleting a Session is not a field edit', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    await deleteSessionAs(token, eventId, sessionId);
+
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: eventId });
+    expect(entries).toHaveLength(0);
   });
 });

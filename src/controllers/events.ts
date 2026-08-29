@@ -1,4 +1,4 @@
-import { Error as MongooseError, type Types } from 'mongoose';
+import { Error as MongooseError } from 'mongoose';
 import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from '@ts-rest/express';
 import type { ServerInferRequest, ServerInferResponses } from '@ts-rest/core';
 import type { contract } from '../contract/index.js';
@@ -33,6 +33,9 @@ type UpdateEventAccommodationBody = ServerInferRequest<typeof contract.updateEve
 type UpdateEventPaymentBody = ServerInferRequest<typeof contract.updateEventPayment>['body'];
 type UpdateDocumentsChecklistBody = ServerInferRequest<typeof contract.updateDocumentsChecklist>['body'];
 type CreateSessionResponse = ServerInferResponses<typeof contract.createSession>;
+type UpdateSessionResponse = ServerInferResponses<typeof contract.updateSession>;
+type UpdateSessionBody = ServerInferRequest<typeof contract.updateSession>['body'];
+type DeleteSessionResponse = ServerInferResponses<typeof contract.deleteSession>;
 
 // Narrow (single-member), not the whole per-route union, so the same
 // constant can be returned from any handler whose response union happens to
@@ -41,6 +44,14 @@ type CreateSessionResponse = ServerInferResponses<typeof contract.createSession>
 const eventNotFound: Extract<GetEventResponse, { status: 404 }> = {
   status: 404,
   body: { error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' } },
+};
+
+// Distinct from eventNotFound — the Event itself exists, but no Session on
+// it matches :sid (a stale link, a session already deleted, or a sid from a
+// different Event entirely).
+const sessionNotFound: Extract<UpdateSessionResponse, { status: 404 }> = {
+  status: 404,
+  body: { error: { code: 'SESSION_NOT_FOUND', message: 'No Session with that id on this Event.' } },
 };
 
 const invalidEventManager: Extract<CreateEventResponse, { status: 400 }> = {
@@ -608,6 +619,13 @@ const isInvalidSessionDateRangeError = (error: unknown): boolean =>
   error instanceof MongooseError.ValidationError &&
   Object.keys(error.errors).some((path) => path.endsWith('.endDate'));
 
+// The hydrated element type of EventDocument['sessions'] — a real Mongoose
+// subdocument (Document methods like `.set()`/`.deleteOne()` included), not
+// the plain SessionAttributes interface. Indexed off EventDocument itself
+// rather than hand-reconstructed, so it always matches whatever Mongoose
+// actually infers for a Types.DocumentArray element.
+type SessionSubdocument = EventDocument['sessions'][number];
+
 const toPublicSessionSetup = (setup: SessionSetupAttributes) => ({
   seating: setup.seating ?? null,
   tableCount: setup.tableCount,
@@ -624,11 +642,11 @@ const toPublicSessionSetup = (setup: SessionSetupAttributes) => ({
 // computeIsMultiDay — never stored, always freshly computed from whatever
 // startDate/endDate are currently on the Session, same "derived, never
 // trusted from the client" convention totalDays (accommodation) and
-// balance (payment) already established. Takes `_id` (not `.id`) — a
+// balance (payment) already established. Reads `_id` (not `.id`) — a
 // Types.DocumentArray's own subdocument type only declares `_id` typed
 // (Types.ObjectId), unlike a top-level HydratedDocument which also gets a
 // typed `.id` string virtual.
-const toPublicSession = (session: SessionAttributes & { _id: Types.ObjectId }) => ({
+const toPublicSession = (session: SessionSubdocument) => ({
   id: session._id.toString(),
   sessionType: session.sessionType,
   venue: session.venue,
@@ -701,4 +719,216 @@ export const createSession: AppRouteMutationImplementation<typeof contract.creat
   }
 
   return { status: 201, body: toPublicSession(session) };
+};
+
+// A partial submitted setup, default-filled the same way sessionSetupSchema
+// (STORY-026) would fill it on assignment — used only to compare against
+// the existing, already-normalized setup (toPublicSessionSetup) so a PATCH
+// resending an identical setup writes no Change Log Entry, the same
+// "genuinely differs, not just present" rule every other field here uses.
+const normalizeSubmittedSetup = (setup: Partial<SessionSetupAttributes> | undefined) => ({
+  seating: setup?.seating ?? null,
+  tableCount: setup?.tableCount ?? 0,
+  chairCount: setup?.chairCount ?? 0,
+  stage: setup?.stage ?? false,
+  buffet: setup?.buffet ?? false,
+  registrationDesk: setup?.registrationDesk ?? false,
+  vipSeating: setup?.vipSeating ?? false,
+  brideGroomSeating: setup?.brideGroomSeating ?? false,
+  notes: setup?.notes ?? null,
+});
+
+// Mutates `session` in place for every field that actually changed and
+// returns the matching PendingChanges — same "only a genuinely different,
+// caller-sent value becomes a change" rule buildEventUpdate/
+// buildAccommodationUpdate/buildPaymentUpdate already use, adapted to
+// mutate a live subdocument directly (via existing.save()) rather than
+// build a $set object, since re-running sessionSchema's own end_date >=
+// start_date validator on save is what this story's AC needs re-confirmed
+// on every update, not just at creation.
+//
+// Each change's `field` is prefixed with the session's identity —
+// `sessions[<session_type>].<field>` — captured from sessionType BEFORE any
+// of this request's edits are applied, even a sessionType change itself
+// (this story's AC example: `sessions[Wedding].end_date`), so the Activity
+// tab can tell which Session a given entry belongs to. camelCase per-field
+// names (`endDate`, not `end_date`) match every other Change Log Entry
+// already written by this controller — the AC's own snake_case is that
+// story text's prose convention, not a wire-format instruction (the SRS
+// writes every field name that way throughout).
+// `setup` is diffed and logged as one whole field (not per-nested-key),
+// the same "compound sub-value is one field" convention roomLines already
+// established for Accommodation.
+const applySessionUpdate = (session: SessionSubdocument, body: UpdateSessionBody): PendingChange[] => {
+  const identity = session.sessionType;
+  const changes: PendingChange[] = [];
+
+  if (body.sessionType !== undefined && body.sessionType !== session.sessionType) {
+    changes.push({
+      field: `sessions[${identity}].sessionType`,
+      oldValue: session.sessionType,
+      newValue: body.sessionType,
+    });
+    session.sessionType = body.sessionType;
+  }
+  if (body.venue !== undefined && body.venue !== session.venue) {
+    changes.push({ field: `sessions[${identity}].venue`, oldValue: session.venue, newValue: body.venue });
+    session.venue = body.venue;
+  }
+  if (body.venueCost !== undefined && body.venueCost !== session.venueCost) {
+    changes.push({
+      field: `sessions[${identity}].venueCost`,
+      oldValue: session.venueCost,
+      newValue: body.venueCost,
+    });
+    session.venueCost = body.venueCost;
+  }
+  if (body.startDate !== undefined && !areDatesEqual(body.startDate, session.startDate)) {
+    changes.push({
+      field: `sessions[${identity}].startDate`,
+      oldValue: session.startDate,
+      newValue: body.startDate,
+    });
+    session.startDate = body.startDate;
+  }
+  if (body.endDate !== undefined && !areDatesEqual(body.endDate, session.endDate)) {
+    changes.push({ field: `sessions[${identity}].endDate`, oldValue: session.endDate, newValue: body.endDate });
+    session.endDate = body.endDate;
+  }
+  if (body.startTime !== undefined && body.startTime !== session.startTime) {
+    changes.push({
+      field: `sessions[${identity}].startTime`,
+      oldValue: session.startTime ?? null,
+      newValue: body.startTime,
+    });
+    session.startTime = body.startTime;
+  }
+  if (body.endTime !== undefined && body.endTime !== session.endTime) {
+    changes.push({
+      field: `sessions[${identity}].endTime`,
+      oldValue: session.endTime ?? null,
+      newValue: body.endTime,
+    });
+    session.endTime = body.endTime;
+  }
+  if (body.pax !== undefined && body.pax !== session.pax) {
+    changes.push({ field: `sessions[${identity}].pax`, oldValue: session.pax, newValue: body.pax });
+    session.pax = body.pax;
+  }
+  // Independent of the parent Event's own status (this story's own AC) —
+  // nothing here, or anywhere else in this controller, ever inspects
+  // existing.status before writing.
+  if (body.sessionStatus !== undefined && body.sessionStatus !== session.sessionStatus) {
+    changes.push({
+      field: `sessions[${identity}].sessionStatus`,
+      oldValue: session.sessionStatus,
+      newValue: body.sessionStatus,
+    });
+    session.sessionStatus = body.sessionStatus;
+  }
+  if (body.setup !== undefined) {
+    const oldValue = toPublicSessionSetup(session.setup);
+    const newValue = normalizeSubmittedSetup(body.setup);
+    if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+      changes.push({ field: `sessions[${identity}].setup`, oldValue, newValue });
+      // A submitted setup is a partial shape (every field optional, same as
+      // createSessionBodySchema) — SessionSetupAttributes' own fields are
+      // required, so a direct `session.setup = body.setup` assignment
+      // doesn't type-check. `.set()` is Mongoose's own loosely-typed escape
+      // hatch for exactly this (same reasoning `.create()`'s `obj: any`
+      // already applies for createSession) — the sub-schema's own
+      // field-level defaults still fill every omitted key at the Mongoose
+      // level, same as they would on creation.
+      session.set('setup', body.setup);
+    }
+  }
+
+  return changes;
+};
+
+// Same last-write-wins, no-locking stance every other Event PATCH already
+// documents — nothing here adds optimistic concurrency either.
+export const updateSession: AppRouteMutationImplementation<typeof contract.updateSession> = async ({
+  params,
+  body,
+  req,
+}) => {
+  if (!req.user) {
+    // Unreachable — eventManagerOnly (router.ts) runs authenticate before
+    // this handler ever does; guarded instead of asserted past.
+    throw new Error('updateSession handler ran without an authenticated user.');
+  }
+  const changedByUserId = req.user.id;
+
+  const existing = await Event.findById(params.id);
+  if (!existing) {
+    return eventNotFound;
+  }
+
+  const session = existing.sessions.id(params.sid);
+  if (!session) {
+    return sessionNotFound;
+  }
+
+  const changes = applySessionUpdate(session, body);
+
+  if (changes.length === 0) {
+    return { status: 200, body: toPublicSession(session) };
+  }
+
+  try {
+    await existing.save();
+  } catch (error) {
+    if (isInvalidSessionDateRangeError(error)) {
+      return invalidSessionDateRange;
+    }
+    throw error;
+  }
+
+  const eventId = existing.id;
+  await Promise.all(
+    changes.map((change) =>
+      logChange({
+        entityType: 'Event',
+        entityId: eventId,
+        field: change.field,
+        oldValue: change.oldValue,
+        newValue: change.newValue,
+        changedByUserId,
+      }),
+    ),
+  );
+
+  return { status: 200, body: toPublicSession(session) };
+};
+
+// No Change Log Entry — removing a whole Session is a deletion, not a
+// field-level edit, the same "creation isn't logged, only edits are"
+// precedent createSession (STORY-027) already established for adding one;
+// applied symmetrically here.
+// Deleting an Event's only remaining Session is allowed — an Event with
+// zero Sessions is a valid, if incomplete, draft state (this story's own
+// edge case); nothing here requires at least one to remain.
+// Typed as AppRouteQueryImplementation, not AppRouteMutationImplementation
+// — this route has no request body at all (a DELETE with no body is
+// ts-rest's AppRouteDeleteNoBody variant), which @ts-rest/express handles
+// with the same no-body handler signature GET routes use, despite the
+// method being DELETE.
+export const deleteSession: AppRouteQueryImplementation<typeof contract.deleteSession> = async ({
+  params,
+}) => {
+  const existing = await Event.findById(params.id);
+  if (!existing) {
+    return eventNotFound;
+  }
+
+  const session = existing.sessions.id(params.sid);
+  if (!session) {
+    return sessionNotFound;
+  }
+
+  session.deleteOne();
+  await existing.save();
+
+  return { status: 204, body: undefined };
 };

@@ -183,6 +183,33 @@ const sessionSetupResultSchema = z.object({
   notes: z.string().nullable(),
 });
 
+export const eventSessionParamsSchema = z.object({
+  id: objectIdSchema('Invalid event id.'),
+  sid: objectIdSchema('Invalid session id.'),
+});
+
+// Every field optional (PATCH semantics), unlike createSessionBodySchema —
+// a caller sends only what changed. Unlike creation, session_status IS
+// accepted here (this story's own AC: "Setting session_status to Cancelled
+// succeeds independently of the parent Event's status") — cancelling an
+// existing Session is an edit, not something a brand-new Session starts as.
+export const updateSessionBodySchema = z.object({
+  sessionType: z.string().trim().min(1).optional(),
+  venue: z.string().trim().min(1).optional(),
+  venueCost: z.number().min(0).optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+  startTime: z.string().trim().min(1).optional(),
+  endTime: z.string().trim().min(1).optional(),
+  pax: z.number().min(0).optional(),
+  sessionStatus: z.nativeEnum(SessionStatus).optional(),
+  // Whole-object replace, same "treat a compound sub-value as one field"
+  // convention updateAccommodationBodySchema's roomLines already
+  // established — a caller resends the full setup it wants, not a sparse
+  // patch of just the sub-fields that changed.
+  setup: sessionSetupInputSchema.optional(),
+});
+
 // durationDays/isMultiDay are derived (STORY-026's computeDurationDays/
 // computeIsMultiDay) — never accepted as input, always present on output,
 // same "derived fields ride along with every sub-resource response"
