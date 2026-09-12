@@ -158,6 +158,10 @@ const toPublicDocumentsChecklist = (checklist: DocumentsChecklistAttributes) => 
 // actually infers for a Types.DocumentArray element.
 type SessionSubdocument = EventDocument['sessions'][number];
 
+// The hydrated element type of a Session subdocument's own `items` —
+// same reasoning SessionSubdocument documents above for `sessions`.
+type ItemSubdocument = SessionSubdocument['items'][number];
+
 const toPublicSessionSetup = (setup: SessionSetupAttributes) => ({
   seating: setup.seating ?? null,
   tableCount: setup.tableCount,
@@ -170,6 +174,30 @@ const toPublicSessionSetup = (setup: SessionSetupAttributes) => ({
   notes: setup.notes ?? null,
 });
 
+// mealName/pax/costPerPlate are Meal-only; eventName/venue are Event-only —
+// nullable, not just absent, same convention setup's own seating/notes
+// already use. total_cost is always freshly computed from whatever
+// pax/costPerPlate are currently stored (STORY-031's computeTotalCost) —
+// never itself stored, so a submitted total_cost is silently ignored
+// (STORY-032's own AC), and it's null for an Event Item, where the
+// concept doesn't apply.
+const toPublicItem = (item: ItemSubdocument) => ({
+  id: item._id.toString(),
+  type: item.type,
+  mealName: item.mealName ?? null,
+  pax: item.pax ?? null,
+  costPerPlate: item.costPerPlate ?? null,
+  menuItems: item.menuItems.map((ref) => ref.toString()),
+  eventName: item.eventName ?? null,
+  venue: item.venue ?? null,
+  startTime: item.startTime ?? null,
+  endTime: item.endTime ?? null,
+  totalCost:
+    item.pax !== undefined && item.costPerPlate !== undefined
+      ? computeTotalCost({ pax: item.pax, costPerPlate: item.costPerPlate })
+      : null,
+});
+
 // durationDays/isMultiDay reuse STORY-026's own computeDurationDays/
 // computeIsMultiDay — never stored, always freshly computed from whatever
 // startDate/endDate are currently on the Session, same "derived, never
@@ -177,7 +205,9 @@ const toPublicSessionSetup = (setup: SessionSetupAttributes) => ({
 // balance (payment) already established. Reads `_id` (not `.id`) — a
 // Types.DocumentArray's own subdocument type only declares `_id` typed
 // (Types.ObjectId), unlike a top-level HydratedDocument which also gets a
-// typed `.id` string virtual.
+// typed `.id` string virtual. items reuses STORY-032's own toPublicItem —
+// GET /events/:id exposed it only once the Session form (STORY-033)
+// actually needed to read/edit current Item data.
 const toPublicSession = (session: SessionSubdocument) => ({
   id: session._id.toString(),
   sessionType: session.sessionType,
@@ -192,6 +222,7 @@ const toPublicSession = (session: SessionSubdocument) => ({
   durationDays: computeDurationDays(session),
   isMultiDay: computeIsMultiDay(session),
   setup: toPublicSessionSetup(session.setup),
+  items: session.items.map(toPublicItem),
 });
 
 // accommodation/payment/documentsChecklist/sessions each reuse their own
@@ -966,10 +997,6 @@ export const deleteSession: AppRouteQueryImplementation<typeof contract.deleteSe
   return { status: 204, body: undefined };
 };
 
-// The hydrated element type of a Session subdocument's own `items` —
-// same reasoning SessionSubdocument already documents for `sessions`.
-type ItemSubdocument = SessionSubdocument['items'][number];
-
 // Attempts to create a new Menu Item by name; if that collides
 // case-insensitively with an existing one (STORY-030's own collation
 // index), re-queries for the existing match instead of failing — a
@@ -1016,30 +1043,6 @@ const resolveMenuItemRefs = async (
   }
   return ids;
 };
-
-// mealName/pax/costPerPlate are Meal-only; eventName/venue are Event-only —
-// nullable, not just absent, same convention setup's own seating/notes
-// already use. total_cost is always freshly computed from whatever
-// pax/costPerPlate are currently stored (STORY-031's computeTotalCost) —
-// never itself stored, so a submitted total_cost is silently ignored
-// (this story's own AC), and it's null for an Event Item, where the
-// concept doesn't apply.
-const toPublicItem = (item: ItemSubdocument) => ({
-  id: item._id.toString(),
-  type: item.type,
-  mealName: item.mealName ?? null,
-  pax: item.pax ?? null,
-  costPerPlate: item.costPerPlate ?? null,
-  menuItems: item.menuItems.map((ref) => ref.toString()),
-  eventName: item.eventName ?? null,
-  venue: item.venue ?? null,
-  startTime: item.startTime ?? null,
-  endTime: item.endTime ?? null,
-  totalCost:
-    item.pax !== undefined && item.costPerPlate !== undefined
-      ? computeTotalCost({ pax: item.pax, costPerPlate: item.costPerPlate })
-      : null,
-});
 
 // No session_status-equivalent concept here, and no Change Log Entry —
 // adding an Item is a creation, not a field-level edit, the same

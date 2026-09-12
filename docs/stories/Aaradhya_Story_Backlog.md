@@ -624,6 +624,10 @@ Built early because every write in every later module needs it. Placed here, not
 - **`escapeRegExp` moved to `src/utils/regex.ts`** — this story's own Menu Item find-or-create needed the identical escaping `GET /menu-items?search=` (STORY-030) already used, its second real caller.
 - **No Change Log Entry on `POST`/`DELETE`**, only `PATCH` — creation/deletion isn't a field-level edit, applied symmetrically at this third nesting level the same way it already was for `POST /events`, `POST /events/:id/sessions`, and `DELETE /events/:id/sessions/:sid`.
 
+**Decisions (v1) — aaradhya-api side of STORY-033:**
+- Same gap as STORY-020/STORY-023/STORY-025/STORY-028: `GET /events/:id` never returned a Session's `items`, and no story had added a dedicated GET for it. Fixed minimally — `items` (via this story's own `toPublicItem`, mapped over the array) added to the already-nested `sessionResultSchema`/`toPublicSession()`, additive only, verified via `npm run typecheck`/`npm run build` (the full Vitest suite could not be run this session — the machine's C: drive was at 0 bytes free, blocking `mongodb-memory-server`'s cache; new tests were still written and are typecheck-clean, pending a real run once disk space is freed). `toPublicItem`/the `ItemSubdocument` type alias moved above `toPublicSession` for correct dependency order, the same relocation every prior instance of this fix has needed.
+- No role-filtering concern — the SRS doesn't restrict Item visibility by role any more than it does Session's own fields.
+
 ### STORY-033: Items UI within Session form
 **Flow:** Within the Session form (STORY-029), an Event Manager adds Meal/Event item cards, searching the shared Menu Item list and adding new items inline when needed.
 **Acceptance Criteria:**

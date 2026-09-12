@@ -210,29 +210,6 @@ export const updateSessionBodySchema = z.object({
   setup: sessionSetupInputSchema.optional(),
 });
 
-// durationDays/isMultiDay are derived (STORY-026's computeDurationDays/
-// computeIsMultiDay) — never accepted as input, always present on output,
-// same "derived fields ride along with every sub-resource response"
-// convention totalDays/totalInclGst (accommodation) and balance (payment)
-// already established. startTime/endTime are nullable, not just optional,
-// matching accommodation's checkIn/checkOut convention for "genuinely
-// unset yet".
-export const sessionResultSchema = z.object({
-  id: z.string(),
-  sessionType: z.string(),
-  venue: z.string(),
-  venueCost: z.number(),
-  startDate: z.date(),
-  endDate: z.date(),
-  startTime: z.string().nullable(),
-  endTime: z.string().nullable(),
-  pax: z.number(),
-  sessionStatus: z.nativeEnum(SessionStatus),
-  durationDays: z.number(),
-  isMultiDay: z.boolean(),
-  setup: sessionSetupResultSchema,
-});
-
 // Each entry either references an existing Menu Item by id, or a name to
 // find-or-create (reusing STORY-030's own uniqueness semantics) — the SRS's
 // "search existing Menu Items or add new inline" flow (§4.5) folded into a
@@ -308,6 +285,33 @@ export const itemResultSchema = z.object({
   startTime: z.string().nullable(),
   endTime: z.string().nullable(),
   totalCost: z.number().nullable(),
+});
+
+// durationDays/isMultiDay are derived (STORY-026's computeDurationDays/
+// computeIsMultiDay) — never accepted as input, always present on output,
+// same "derived fields ride along with every sub-resource response"
+// convention totalDays/totalInclGst (accommodation) and balance (payment)
+// already established. startTime/endTime are nullable, not just optional,
+// matching accommodation's checkIn/checkOut convention for "genuinely
+// unset yet". items added STORY-033 — GET /events/:id returned it only
+// once the Session form actually needed to read/edit current Item data
+// (same retroactive-addition pattern accommodation/payment/
+// documentsChecklist/sessions itself already went through).
+export const sessionResultSchema = z.object({
+  id: z.string(),
+  sessionType: z.string(),
+  venue: z.string(),
+  venueCost: z.number(),
+  startDate: z.date(),
+  endDate: z.date(),
+  startTime: z.string().nullable(),
+  endTime: z.string().nullable(),
+  pax: z.number(),
+  sessionStatus: z.nativeEnum(SessionStatus),
+  durationDays: z.number(),
+  isMultiDay: z.boolean(),
+  setup: sessionSetupResultSchema,
+  items: z.array(itemResultSchema),
 });
 
 // The public Event shape — everything STORY-011's schema persists, plus the

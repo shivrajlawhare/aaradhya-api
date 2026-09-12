@@ -208,6 +208,13 @@ request shape, not which credential was wrong.
   point and a real list to add to). Reuses STORY-027's own `toPublicSession`
   — each array element carries the same derived `durationDays`/`isMultiDay`
   fields the sub-resource routes already return.
+- **`sessionResultSchema` includes `items` as of STORY-033**, the fifth
+  occurrence of the same pattern, this time nested one level deeper
+  (a field added to `sessionResultSchema`, not `eventResultSchema`
+  directly) — STORY-033's Items UI within the Session form needed to
+  read/edit current Item data. Reuses STORY-032's own `toPublicItem`,
+  each element carrying the same derived `totalCost` the Item
+  sub-resource routes already return.
 
 ### PATCH /events/:id — SETTLED (STORY-014)
 

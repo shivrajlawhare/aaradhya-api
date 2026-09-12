@@ -505,6 +505,35 @@ describe('GET /events/:id', () => {
     });
   });
 
+  it("includes each session's items, defaulting to an empty array", async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload());
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.sessions[0]?.items).toEqual([]);
+    expect(session.body.id).toBe(response.body.sessions[0]?.id);
+  });
+
+  it('reflects a prior POST .../sessions/:sid/items, including derived total_cost', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload());
+    await postItemAs(token, created.body.id, session.body.id, validMealItemPayload());
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.sessions[0]?.items).toHaveLength(1);
+    expect(response.body.sessions[0]?.items[0]).toMatchObject({
+      type: 'Meal',
+      mealName: 'Lunch',
+      totalCost: 50000,
+    });
+  });
+
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
 
