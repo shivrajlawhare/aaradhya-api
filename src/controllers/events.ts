@@ -13,6 +13,7 @@ import {
   type DocumentsChecklistAttributes,
   type EventAttributes,
   type EventDocument,
+  type ExtrasAttributes,
   type PaymentAttributes,
   type RoomLineAttributes,
   type SessionAttributes,
@@ -39,6 +40,7 @@ type UpdateEventBody = ServerInferRequest<typeof contract.updateEvent>['body'];
 type UpdateEventAccommodationBody = ServerInferRequest<typeof contract.updateEventAccommodation>['body'];
 type UpdateEventPaymentBody = ServerInferRequest<typeof contract.updateEventPayment>['body'];
 type UpdateDocumentsChecklistBody = ServerInferRequest<typeof contract.updateDocumentsChecklist>['body'];
+type UpdateEventExtrasBody = ServerInferRequest<typeof contract.updateEventExtras>['body'];
 type CreateSessionResponse = ServerInferResponses<typeof contract.createSession>;
 type UpdateSessionResponse = ServerInferResponses<typeof contract.updateSession>;
 type UpdateSessionBody = ServerInferRequest<typeof contract.updateSession>['body'];
@@ -142,6 +144,12 @@ const toPublicPayment = (payment: PaymentAttributes) => ({
   advancePaidDate: payment.advancePaidDate ?? null,
   paymentMode: payment.paymentMode ?? null,
   balance: computeBalance(payment.totalEstimatedAmount, payment.advancePaid),
+});
+
+const toPublicExtras = (extras: ExtrasAttributes) => ({
+  decoration: extras.decoration,
+  photographer: extras.photographer,
+  bhatji: extras.bhatji,
 });
 
 const toPublicDocumentsChecklist = (checklist: DocumentsChecklistAttributes) => ({
@@ -746,6 +754,86 @@ export const updateDocumentsChecklist: AppRouteMutationImplementation<
   );
 
   return { status: 200, body: toPublicDocumentsChecklist(updated.documentsChecklist) };
+};
+
+// Three tracked fields, one Change Log Entry per changed field — same
+// granularity every other Event PATCH uses. Plain !== compares, the same
+// shape buildPaymentUpdate already uses for its own three money fields —
+// not a loop over a shared keys array (unlike buildDocumentsChecklistUpdate)
+// since three explicit ifs isn't more repetitive than building and
+// threading one would be.
+const buildExtrasUpdate = (
+  existing: EventDocument,
+  body: UpdateEventExtrasBody,
+): { update: Record<string, unknown>; changes: PendingChange[] } => {
+  const current = existing.extras;
+  const update: Record<string, unknown> = {};
+  const changes: PendingChange[] = [];
+
+  if (body.decoration !== undefined && body.decoration !== current.decoration) {
+    update['extras.decoration'] = body.decoration;
+    changes.push({ field: 'decoration', oldValue: current.decoration, newValue: body.decoration });
+  }
+  if (body.photographer !== undefined && body.photographer !== current.photographer) {
+    update['extras.photographer'] = body.photographer;
+    changes.push({ field: 'photographer', oldValue: current.photographer, newValue: body.photographer });
+  }
+  if (body.bhatji !== undefined && body.bhatji !== current.bhatji) {
+    update['extras.bhatji'] = body.bhatji;
+    changes.push({ field: 'bhatji', oldValue: current.bhatji, newValue: body.bhatji });
+  }
+
+  return { update, changes };
+};
+
+// Same last-write-wins, no-locking stance every other Event PATCH already
+// documents — nothing here adds optimistic concurrency either.
+export const updateEventExtras: AppRouteMutationImplementation<typeof contract.updateEventExtras> = async ({
+  params,
+  body,
+  req,
+}) => {
+  if (!req.user) {
+    // Unreachable — eventManagerOnly (router.ts) runs authenticate before
+    // this handler ever does; guarded instead of asserted past.
+    throw new Error('updateEventExtras handler ran without an authenticated user.');
+  }
+  const changedByUserId = req.user.id;
+
+  const existing = await Event.findById(params.id);
+  if (!existing) {
+    return eventNotFound;
+  }
+
+  const { update, changes } = buildExtrasUpdate(existing, body);
+
+  if (changes.length === 0) {
+    return { status: 200, body: toPublicExtras(existing.extras) };
+  }
+
+  const updated = await Event.findByIdAndUpdate(params.id, update, {
+    returnDocument: 'after',
+    runValidators: true,
+  });
+  if (!updated) {
+    return eventNotFound;
+  }
+  const eventId = updated.id;
+
+  await Promise.all(
+    changes.map((change) =>
+      logChange({
+        entityType: 'Event',
+        entityId: eventId,
+        field: change.field,
+        oldValue: change.oldValue,
+        newValue: change.newValue,
+        changedByUserId,
+      }),
+    ),
+  );
+
+  return { status: 200, body: toPublicExtras(updated.extras) };
 };
 
 const invalidSessionDateRange: Extract<CreateSessionResponse, { status: 400 }> = {

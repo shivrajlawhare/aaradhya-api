@@ -748,6 +748,13 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** Negative amount input (reject — these are costs, not adjustments, in v1's model).
 
+**Decisions (v1):**
+- Unknown keys are **rejected**, not ignored: `updateEventExtrasBodySchema` is `.strict()`, matching STORY-024's `documentsChecklistFieldsSchema` precedent (also a small, closed, non-extensible field set) rather than `payment`'s default-strip behavior — a caller mistyping `decoration` shouldn't get a silent 200 no-op.
+- `extras` is a new, always-instantiated `EventAttributes` sub-object (`ExtrasAttributes { decoration, photographer, bhatji }`, each defaulting to 0), the same "always exists, fields default to 0" shape `payment` uses — not `accommodation`'s "may be entirely absent" shape — so a brand-new Event reads all three as 0, satisfying STORY-041's future all-zero-summary edge case without any extra null-handling.
+- `buildExtrasUpdate` uses three explicit `!==` comparisons (`buildPaymentUpdate`'s shape), not a loop over a shared keys array (`buildDocumentsChecklistUpdate`'s shape) — three fields is no more repetitive than threading a keys array would be.
+- Not wired into `GET /events/:id`'s `eventResultSchema` yet — this story's own "UI: None" line means nothing reads it back yet; deferred to whichever future story first needs to, following the same `accommodation`(STORY-020)/`payment`(STORY-023)/`documentsChecklist`(STORY-025) recurrence.
+- Field names (`decoration`/`photographer`/`bhatji`) match STORY-039's `QuotationExtrasInput` exactly, so STORY-041 can pass `event.extras` straight into `computeTotalCostSummary` with no field-mapping layer.
+
 ### STORY-041: GET /events/:id/quotation-summary
 **Flow:** The Quotation Preview and Event Detail screens request the live rollup for one Event, combining STORY-039's function with that Event's actual session/accommodation/extras data.
 **Acceptance Criteria:**

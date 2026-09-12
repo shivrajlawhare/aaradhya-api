@@ -68,6 +68,19 @@ export interface PaymentAttributes {
   paymentMode?: string;
 }
 
+// SRS §5.4 FR-QUO-2 — the three optional, plain (no computation applied)
+// line-item amounts an Event Manager can enter to feed the Quotation's
+// Total Cost Summary (STORY-039): Decoration, Photographer, Bhatji. Always
+// instantiated with every field defaulted to 0, same "always exists,
+// fields default to 0/unset" shape PaymentAttributes above already uses —
+// not AccommodationAttributes' "may be entirely absent" shape — so a
+// brand-new Event reads all three as 0, never null/error.
+export interface ExtrasAttributes {
+  decoration: number;
+  photographer: number;
+  bhatji: number;
+}
+
 // SRS §4.8 — the fixed, server-defined set of Document Checklist Item keys.
 // Never extended via the API (STORY-024's own AC: reject any key outside
 // this list) — a flat object with one boolean per fixed key, not an
@@ -216,6 +229,7 @@ export interface EventAttributes {
   accommodation?: AccommodationAttributes;
   payment: PaymentAttributes;
   documentsChecklist: DocumentsChecklistAttributes;
+  extras: ExtrasAttributes;
   // Typed as a DocumentArray (not plain SessionAttributes[], unlike
   // clientContacts/roomLines above) — STORY-027 is the first place a
   // Session's own generated sub-id needs to come back out, which needs
@@ -278,6 +292,20 @@ const documentsChecklistSchema = new Schema<DocumentsChecklistAttributes>(
     rationCard: { type: Boolean, required: true, default: false },
     passportPhotos: { type: Boolean, required: true, default: false },
     weddingCard: { type: Boolean, required: true, default: false },
+  },
+  { _id: false },
+);
+
+// Every field defaults to 0, same "always instantiated" shape paymentSchema
+// already uses above — a brand-new Event reads decoration/photographer/
+// bhatji as 0, never null/error (this story's own "no extras entered yet"
+// edge case). min: 0 rejects a negative amount (this story's own edge case
+// — "these are costs, not adjustments").
+const extrasSchema = new Schema<ExtrasAttributes>(
+  {
+    decoration: { type: Number, required: true, default: 0, min: 0 },
+    photographer: { type: Number, required: true, default: 0, min: 0 },
+    bhatji: { type: Number, required: true, default: 0, min: 0 },
   },
   { _id: false },
 );
@@ -408,6 +436,9 @@ const eventSchema = new Schema<EventAttributes>(
     // Always instantiated, same reasoning as payment above — a brand-new
     // Event reads every checklist item as false, never null/error.
     documentsChecklist: { type: documentsChecklistSchema, required: true, default: () => ({}) },
+    // Always instantiated, same reasoning as payment/documentsChecklist
+    // above — a brand-new Event reads decoration/photographer/bhatji as 0.
+    extras: { type: extrasSchema, required: true, default: () => ({}) },
     // Zero or more at the schema level, same reasoning as clientContacts —
     // this story only defines the shape; an "at least one Session" rule (if
     // any) belongs to whichever later story adds the add/remove endpoint.

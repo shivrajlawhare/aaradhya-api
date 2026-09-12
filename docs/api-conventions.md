@@ -354,6 +354,41 @@ request shape, not which credential was wrong.
   for `accommodation` (STORY-020) and `payment` (STORY-023); see the
   `GET /events, GET /events/:id` section above.
 
+### PATCH /events/:id/extras — SETTLED (STORY-040)
+
+- Gated by `requireRole(Role.EventManager)`, same as the other write routes
+  on Event.
+- Three fixed keys (`decoration`, `photographer`, `bhatji`), each an
+  optional non-negative number — a caller sends only what changed. The
+  body schema is `.strict()`, reusing `PATCH /events/:id/documents`'
+  precedent rather than payment's default-strip behavior: any key outside
+  this fixed three is a `400 VALIDATION_ERROR` (this story's own AC framed
+  it as "pick one, document it" — `.strict()` was chosen since extras is
+  the same kind of small, closed, non-extensible field set the documents
+  checklist already is, unlike payment's more open-ended field list).
+- Each amount is a plain numeric value — no computation applied to it
+  (STORY-039's `computeTotalCostSummary` is the only place these three
+  feed into a derived total, never this endpoint).
+- All three reject a negative value as `400 VALIDATION_ERROR` — "money in
+  can't be negative," the same convention `PATCH /events/:id/payment`
+  already established.
+- Response is the extras sub-object itself, not the parent Event — same
+  sub-resource-route convention `accommodation`/`payment`/`documents`
+  already established.
+- A brand-new Event reads all three as `0` — never `null`, never an
+  error — same "always instantiated with defaulted fields" shape
+  `payment`/`documentsChecklist` already use (not `accommodation`'s "may
+  be entirely absent" shape).
+- Each changed field writes its own Change Log Entry — same "one entry
+  per changed field" granularity every other Event PATCH uses.
+- Not yet exposed on `GET /events/:id` — this story has no UI need to read
+  it back yet (its own "UI: None" line); a future story will add
+  `extras: extrasResultSchema` to `eventResultSchema` the same way
+  `accommodation`/`payment`/`documentsChecklist`/`sessions` each were,
+  once a UI story actually needs to read the current state on first
+  render (see the `GET /events, GET /events/:id` section above for that
+  recurring pattern).
+
 ### POST /events/:id/sessions — SETTLED (STORY-027)
 
 - Gated by `requireRole(Role.EventManager)`, same as the other write routes

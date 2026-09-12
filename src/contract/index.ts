@@ -14,6 +14,7 @@ import {
   eventResultSchema,
   eventSessionItemParamsSchema,
   eventSessionParamsSchema,
+  extrasResultSchema,
   getCalendarQuerySchema,
   itemResultSchema,
   paymentResultSchema,
@@ -22,6 +23,7 @@ import {
   updateAccommodationBodySchema,
   updateDocumentsChecklistBodySchema,
   updateEventBodySchema,
+  updateEventExtrasBodySchema,
   updateEventPaymentBodySchema,
   updateItemBodySchema,
   updateSessionBodySchema,
@@ -206,6 +208,17 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: "Toggle items on an Event's Documents Checklist (Event Manager only)",
+  },
+  updateEventExtras: {
+    method: 'PATCH',
+    path: '/events/:id/extras',
+    pathParams: eventIdParamsSchema,
+    body: updateEventExtrasBodySchema,
+    responses: {
+      200: extrasResultSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Edit an Event's Quotation extras — Decoration/Photographer/Bhatji (Event Manager only)",
   },
   createSession: {
     method: 'POST',

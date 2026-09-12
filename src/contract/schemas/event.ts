@@ -134,6 +134,27 @@ export const paymentResultSchema = z.object({
   balance: z.number(),
 });
 
+// One numeric field per fixed key, hand-written — same "fixed, closed set
+// of named keys" shape documentsChecklistFieldsSchema above already
+// established for STORY-024, reused here since extras (Decoration/
+// Photographer/Bhatji, SRS §5.4 FR-QUO-2) is the same kind of small,
+// non-extensible field set. `.strict()` reuses that same "unknown key ->
+// 400" outcome, for the same reason: a caller mistyping a key should get a
+// rejection, not a silently-stripped no-op. min(0) rejects a negative
+// amount (this story's own edge case — "these are costs, not adjustments").
+const extrasFieldsSchema = z.object({
+  decoration: z.number().min(0).optional(),
+  photographer: z.number().min(0).optional(),
+  bhatji: z.number().min(0).optional(),
+});
+
+export const updateEventExtrasBodySchema = extrasFieldsSchema.strict();
+
+// .required() strips the .optional() every input field carries — every
+// Event always has all three amounts (defaulted to 0), same "always
+// instantiated" convention payment/documentsChecklist already use.
+export const extrasResultSchema = extrasFieldsSchema.required();
+
 // setup is optional as a whole (STORY-027: an Event Manager may add a
 // Session without touching setup at all yet) and every field within it is
 // optional too — a caller sends only what it's chosen so far, the rest fall

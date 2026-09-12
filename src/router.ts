@@ -15,6 +15,7 @@ import {
   updateDocumentsChecklist,
   updateEvent,
   updateEventAccommodation,
+  updateEventExtras,
   updateEventPayment,
   updateItem,
   updateSession,
@@ -86,6 +87,10 @@ export const router = server.router(contract, {
   updateDocumentsChecklist: {
     middleware: eventManagerOnly,
     handler: updateDocumentsChecklist,
+  },
+  updateEventExtras: {
+    middleware: eventManagerOnly,
+    handler: updateEventExtras,
   },
   createSession: {
     middleware: eventManagerOnly,

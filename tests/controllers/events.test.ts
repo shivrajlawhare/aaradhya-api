@@ -59,6 +59,9 @@ const patchPaymentAs = (token: string, id: string, body: object) =>
 const patchDocumentsChecklistAs = (token: string, id: string, body: object) =>
   request(app).patch(`/events/${id}/documents`).set('Authorization', `Bearer ${token}`).send(body);
 
+const patchExtrasAs = (token: string, id: string, body: object) =>
+  request(app).patch(`/events/${id}/extras`).set('Authorization', `Bearer ${token}`).send(body);
+
 const postSessionAs = (token: string, id: string, body: object) =>
   request(app).post(`/events/${id}/sessions`).set('Authorization', `Bearer ${token}`).send(body);
 
@@ -1458,6 +1461,145 @@ describe('PATCH /events/:id/documents', () => {
     expect(response.body.aadharCard).toBe(true);
     expect(response.body.panCard).toBe(true);
     expect(response.body.weddingCard).toBe(true);
+  });
+});
+
+describe('PATCH /events/:id/extras', () => {
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+
+    const response = await request(app)
+      .patch(`/events/${created.body.id}/extras`)
+      .send({ decoration: 5000 });
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(creatorToken, validPayload(manager.id));
+      const { token } = await seedCaller(role);
+
+      const response = await patchExtrasAs(token, created.body.id, { decoration: 5000 });
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchExtrasAs(token, '507f1f77bcf86cd799439011', { decoration: 5000 });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' },
+    });
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await patchExtrasAs(token, 'not-an-id', { decoration: 5000 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('reads all three amounts as 0 for a brand-new Event with no extras entered yet', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    // An empty-body PATCH takes the changes.length === 0 path, returning
+    // the current (untouched) state.
+    const response = await patchExtrasAs(token, created.body.id, {});
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ decoration: 0, photographer: 0, bhatji: 0 });
+  });
+
+  it('sets a plain numeric amount with no computation applied to it', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchExtrasAs(token, created.body.id, {
+      decoration: 15000,
+      photographer: 20000,
+      bhatji: 5000,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ decoration: 15000, photographer: 20000, bhatji: 5000 });
+  });
+
+  it('rejects a key outside the fixed decoration/photographer/bhatji list as 400', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchExtrasAs(token, created.body.id, { catering: 1000 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects a negative amount as 400 — these are costs, not adjustments', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchExtrasAs(token, created.body.id, { decoration: -1 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('writes one Change Log Entry per changed field', async () => {
+    const { caller, token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchExtrasAs(token, created.body.id, { decoration: 15000, bhatji: 5000 });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries.map((entry) => entry.field).sort()).toEqual(['bhatji', 'decoration']);
+    for (const entry of entries) {
+      expect(entry.changedBy).toBe(caller.id);
+      expect(entry.oldValue).toBe(0);
+    }
+  });
+
+  it('writes no Change Log Entry for a PATCH that resubmits the same value', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchExtrasAs(token, created.body.id, { decoration: 15000 });
+
+    const response = await patchExtrasAs(token, created.body.id, { decoration: 15000 });
+
+    expect(response.status).toBe(200);
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entries).toHaveLength(1); // only the first PATCH's entry, not a second
+  });
+
+  it('leaves other extras fields untouched when only one field is submitted', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchExtrasAs(token, created.body.id, { decoration: 15000, photographer: 20000 });
+
+    const response = await patchExtrasAs(token, created.body.id, { bhatji: 5000 });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ decoration: 15000, photographer: 20000, bhatji: 5000 });
   });
 });
 
