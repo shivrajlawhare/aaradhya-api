@@ -731,6 +731,13 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** An Event with zero sessions (all totals compute to 0, not `NaN` or an error); a GST rate of 0% (grand total should just equal the pre-GST food subtotal plus everything else, sanity-checking the formula isn't hardcoded to a nonzero rate).
 
+**Decisions (v1):**
+- `computeTotalCostSummary` lives in `src/services/quotation.ts`, matching `accommodation.ts`/`item.ts`'s established pure-function shape: named `interface` inputs, a `gstRatePercent: number = config.gstRatePercent` defaultable trailing param (same convention as `computeRoomLineTotalInclGst`/`computeTotalCharges`), every money output run through `roundToCurrency`.
+- "Food subtotal" = sum of `computeTotalCost` (from `item.ts`) over every Item across every Session **where `type === ItemType.Meal`** — confirmed against SRS §4.5's own table, which lists `total_cost` only for Meal Items; Event Items (`eventName`/`venue`/times, no `pax`/`costPerPlate`) are architecturally incapable of contributing a cost and are filtered out rather than passed to `computeTotalCost`.
+- GST (SRS Assumption A9) is applied only to the food subtotal to produce `foodTotalInclGst` — venue costs, Accommodation's `total_charges` (already GST-inclusive from its own separate `computeTotalCharges` call, STORY-018), and extras all pass through untaxed by this function.
+- `extras` (decoration/photographer/bhatji, SRS FR-QUO-2) is accepted as a plain input object rather than read off `EventAttributes`, since STORY-040 (the PATCH endpoint that will actually store these) hasn't been built yet; each of the three fields is optional and defaults to 0, satisfying STORY-041's future "before any Session/Accommodation/extras data exists" all-zero edge case.
+- Output is exactly the 6 fields this story's AC lists (`venueTotal`, `foodSubtotal`, `foodTotalInclGst`, `accommodationTotal`, `extrasTotal`, `grandTotal`) — no per-extra breakdown or GST-amount-only field added, since nothing in this story's AC asks for them; STORY-040/041 can extend the shape when they actually need to.
+
 ### STORY-040: PATCH /events/:id/extras
 **Flow:** An Event Manager enters the three optional simple line-item amounts — Decoration, Photographer, Bhatji — that feed into the Total Cost Summary.
 **Acceptance Criteria:**
