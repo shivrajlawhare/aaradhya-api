@@ -529,11 +529,51 @@ request shape, not which credential was wrong.
   a plain array when STORY-031 first added the field) — this story is the
   first place an Item's own generated sub-id needs to come back out, the
   same reason `Event.sessions` was retyped in STORY-027.
-- `GET /events/:id` does **not** yet include `sessions[].items` in its
-  response — no story has needed to read it yet. Expect the by-now-
-  familiar retroactive-addition pattern to recur a fifth time (this time
-  nested inside `sessions`, not a new top-level field) once a UI story
-  needs to display current Item data.
+- `GET /events/:id` now includes `sessions[].items` as of STORY-033's own
+  aaradhya-api dependency fix — the fifth occurrence of the same
+  retroactive-addition pattern (`accommodation`/`payment`/
+  `documentsChecklist`/`sessions` itself each went through it first), this
+  time nested inside `sessions` rather than a new top-level field.
+
+### GET /calendar — SETTLED (STORY-034)
+
+- `authenticatedOnly`, no role restriction — matches `GET /events`/
+  `GET /events/:id`/`GET /menu-items`, the only other no-role-check
+  routes; `sessionResultSchema` carries no Payment data, the one field the
+  SRS actually gates by role.
+- `?month=`/`?year=` are `z.coerce.number()` — the **first** query schema
+  in this codebase to coerce to a non-string type. This made ts-rest's
+  per-route request type (`query: { month: number; year: number }`)
+  structurally incompatible with Express's own default `Request<...>`
+  (`query: ParsedQs`, all-string), breaking `authenticate`/`requireRole`'s
+  assignability as `middleware`. Both were retyped to
+  `Request<any, any, any, any>`/`RequestHandler<any, any, any, any>` to
+  fix it — every prior query schema stayed string-shaped, so this never
+  surfaced before.
+- The overlap test itself is a pure, DB-free function
+  (`sessionOverlapsMonth`, `src/services/session.ts`), matching
+  `docs/handler-patterns.md`'s explicit "calendar overlap queries" example
+  of what belongs in `services/`. The Mongo query narrows candidates via
+  `$elemMatch` (all three conditions — `sessionStatus`/`startDate`/
+  `endDate` — against the *same* session, not three independently-matched
+  array elements); the identical predicate then re-filters each matched
+  Event's own sessions in-memory, so a matched Event's other,
+  non-qualifying sessions never leak into the response.
+- Response reuses `sessionResultSchema` wholesale (via the existing
+  `toPublicSession`) plus a slim `event: { id, eventFamilyType, status }`
+  summary — not a hand-carved leaner shape — per this story's own "avoid a
+  second round-trip" reasoning.
+- The "session missing `start_date`/`end_date`" edge case is unreachable
+  through the live API today (both fields are schema-required, and
+  neither `createSessionBodySchema` nor `updateSessionBodySchema` can
+  un-set an existing date) but is still implemented and unit-tested
+  directly against the pure predicate — this story's own AC names it
+  explicitly, and the Spec Amendment calls it out as a real edge case for
+  whenever a future story relaxes that requirement.
+- Two Active Sessions of the same Event overlapping the same day are
+  returned **raw**, one entry each — deduplication to one calendar chip
+  per Event per day is STORY-035's own client-side rendering job, not
+  this endpoint's (this story's own edge case).
 
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 

@@ -87,6 +87,9 @@ const deleteItemAs = (token: string, id: string, sid: string, iid: string) =>
 const listMenuItemsAs = (token: string, search: string) =>
   request(app).get('/menu-items').query({ search }).set('Authorization', `Bearer ${token}`);
 
+const getCalendarAs = (token: string, month: number, year: number) =>
+  request(app).get('/calendar').query({ month, year }).set('Authorization', `Bearer ${token}`);
+
 const validMealItemPayload = (overrides: Record<string, unknown> = {}) => ({
   type: 'Meal',
   mealName: 'Lunch',
@@ -2080,5 +2083,137 @@ describe('DELETE /events/:id/sessions/:sid/items/:iid', () => {
 
     const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: eventId });
     expect(entries).toHaveLength(0);
+  });
+});
+
+describe('GET /calendar', () => {
+  it('returns 401 with no token', async () => {
+    const response = await request(app).get('/calendar').query({ month: 9, year: 2026 });
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 200 for any authenticated role (%s) — no role restriction, same as GET /events',
+    async (role) => {
+      const { token } = await seedCaller(role);
+
+      const response = await getCalendarAs(token, 9, 2026);
+
+      expect(response.status).toBe(200);
+    },
+  );
+
+  it('returns 400 for an out-of-range month', async () => {
+    const { token } = await seedCaller();
+
+    const response = await getCalendarAs(token, 13, 2026);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 200 with an empty array for a month with zero matching sessions', async () => {
+    const { token } = await seedCaller();
+
+    const response = await getCalendarAs(token, 9, 2026);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
+
+  it("returns a fixture 3-day session for a query naming a date in the middle of its range, even though the query never names that date specifically", async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({ startDate: '2026-09-12', endDate: '2026-09-14' }),
+    );
+
+    const response = await getCalendarAs(token, 9, 2026);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]).toMatchObject({
+      startDate: expect.any(String),
+      endDate: expect.any(String),
+      sessionStatus: 'Active',
+      event: { id: created.body.id, eventFamilyType: 'Wedding', status: EventStatus.Tentative },
+    });
+  });
+
+  it('returns a session spanning a month boundary from both the September and the October query', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({ startDate: '2026-09-29', endDate: '2026-10-01' }),
+    );
+
+    const septemberResponse = await getCalendarAs(token, 9, 2026);
+    const octoberResponse = await getCalendarAs(token, 10, 2026);
+
+    expect(septemberResponse.body).toHaveLength(1);
+    expect(octoberResponse.body).toHaveLength(1);
+  });
+
+  it('excludes a Cancelled session even though its dates fall in range', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({ startDate: '2026-09-12', endDate: '2026-09-12' }),
+    );
+    await patchSessionAs(token, created.body.id, session.body.id, { sessionStatus: 'Cancelled' });
+
+    const response = await getCalendarAs(token, 9, 2026);
+
+    expect(response.body).toEqual([]);
+  });
+
+  it('excludes a session whose range does not overlap the queried month at all', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({ startDate: '2026-08-01', endDate: '2026-08-05' }),
+    );
+
+    const response = await getCalendarAs(token, 9, 2026);
+
+    expect(response.body).toEqual([]);
+  });
+
+  it("returns both of the same Event's Active sessions overlapping the same day, raw — dedup is a client-side rendering concern (STORY-035), not this endpoint's job", async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({ sessionType: 'Haldi', venue: 'Lawn', startDate: '2026-09-12', endDate: '2026-09-12' }),
+    );
+    await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({
+        sessionType: 'Vendor Setup',
+        venue: 'Banquet Hall',
+        startDate: '2026-09-12',
+        endDate: '2026-09-12',
+      }),
+    );
+
+    const response = await getCalendarAs(token, 9, 2026);
+
+    expect(response.body).toHaveLength(2);
   });
 });

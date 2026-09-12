@@ -339,3 +339,32 @@ export const eventResultSchema = z.object({
   createdAt: z.date(),
   updatedAt: z.date(),
 });
+
+// month is 1-indexed (?month=9 means September), matching the story's own
+// query example — z.coerce.number() parses the string every query param
+// arrives as; a non-numeric or out-of-range value fails validation and is
+// reshaped into the documented 400 by app.ts's requestValidationErrorHandler,
+// same as every other route's request-schema validation.
+export const getCalendarQuerySchema = z.object({
+  month: z.coerce.number().int().min(1).max(12),
+  year: z.coerce.number().int().min(1970).max(2100),
+});
+
+// Deliberately not the full eventResultSchema — payment/accommodation/
+// documentsChecklist/clientContacts have no bearing on rendering a calendar
+// chip, and this story's own AC only asks for "enough of its parent Event's
+// data... to render a chip without a second round-trip per session."
+export const calendarEventSummarySchema = z.object({
+  id: z.string(),
+  eventFamilyType: z.string(),
+  status: z.nativeEnum(EventStatus),
+});
+
+// Reuses sessionResultSchema wholesale (including items/setup) rather than
+// hand-carving a leaner calendar-only shape — the same "avoid a second
+// round-trip" AC argues for handing back the richer shape the client
+// already knows how to read from GET /events, not a third, narrower Session
+// representation to keep in sync.
+export const calendarSessionResultSchema = sessionResultSchema.extend({
+  event: calendarEventSummarySchema,
+});

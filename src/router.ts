@@ -8,6 +8,7 @@ import {
   createSession,
   deleteItem,
   deleteSession,
+  getCalendar,
   getEvent,
   listEvents,
   updateDocumentsChecklist,
@@ -108,5 +109,9 @@ export const router = server.router(contract, {
   deleteItem: {
     middleware: eventManagerOnly,
     handler: deleteItem,
+  },
+  getCalendar: {
+    middleware: authenticatedOnly,
+    handler: getCalendar,
   },
 });

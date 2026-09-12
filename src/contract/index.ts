@@ -5,6 +5,7 @@ import { loginBodySchema, loginResultSchema } from './schemas/auth.js';
 import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/change-log.js';
 import {
   accommodationResultSchema,
+  calendarSessionResultSchema,
   createEventBodySchema,
   createItemBodySchema,
   createSessionBodySchema,
@@ -13,6 +14,7 @@ import {
   eventResultSchema,
   eventSessionItemParamsSchema,
   eventSessionParamsSchema,
+  getCalendarQuerySchema,
   itemResultSchema,
   paymentResultSchema,
   sessionResultSchema,
@@ -263,5 +265,14 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: "Remove one of a Session's Items (Event Manager only)",
+  },
+  getCalendar: {
+    method: 'GET',
+    path: '/calendar',
+    query: getCalendarQuerySchema,
+    responses: {
+      200: z.array(calendarSessionResultSchema),
+    },
+    summary: 'Active Sessions overlapping any date within a given month (any authenticated caller)',
   },
 });

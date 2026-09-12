@@ -7,6 +7,7 @@ import {
   Event,
   EventStatus,
   ItemType,
+  SessionStatus,
   type AccommodationAttributes,
   type ClientContactAttributes,
   type DocumentsChecklistAttributes,
@@ -26,7 +27,7 @@ import {
 import { logChange } from '../services/change-log.js';
 import { computeTotalCost } from '../services/item.js';
 import { computeBalance } from '../services/payment.js';
-import { computeDurationDays, computeIsMultiDay } from '../services/session.js';
+import { computeDurationDays, computeIsMultiDay, computeMonthRange, sessionOverlapsMonth } from '../services/session.js';
 import { isDuplicateKeyError } from '../utils/mongo-errors.js';
 import { escapeRegExp } from '../utils/regex.js';
 
@@ -1253,4 +1254,37 @@ export const deleteItem: AppRouteQueryImplementation<typeof contract.deleteItem>
   await existingEvent.save();
 
   return { status: 204, body: undefined };
+};
+
+// $elemMatch narrows to Events that have AT LEAST ONE qualifying session —
+// querying the three conditions without it would let MongoDB match each
+// condition against a different array element instead of the same one
+// (e.g. an Event with one Cancelled session in-range and one Active
+// session out of range would wrongly match). The exact same test then runs
+// again in-memory (sessionOverlapsMonth) to filter each matched Event down
+// to only its own qualifying sessions — a matched Event can still have
+// other, non-qualifying sessions that must not appear in the response.
+export const getCalendar: AppRouteQueryImplementation<typeof contract.getCalendar> = async ({ query }) => {
+  const range = computeMonthRange(query.month, query.year);
+
+  const events = await Event.find({
+    sessions: {
+      $elemMatch: {
+        sessionStatus: SessionStatus.Active,
+        startDate: { $lte: range.monthEnd },
+        endDate: { $gte: range.monthStart },
+      },
+    },
+  });
+
+  const sessions = events.flatMap((event) =>
+    event.sessions
+      .filter((session) => sessionOverlapsMonth(session, range))
+      .map((session) => ({
+        ...toPublicSession(session),
+        event: { id: event.id, eventFamilyType: event.eventFamilyType, status: event.status },
+      })),
+  );
+
+  return { status: 200, body: sessions };
 };

@@ -21,8 +21,14 @@ const bearerToken = (header: string | undefined): string | undefined => {
  * `req.user.role` reflects the database, not a possibly-stale token claim
  * (v1 decision — see docs/stories/Aaradhya_Story_Backlog.md STORY-003).
  */
+// Request<any, any, any, any> (not the bare `Request` default, which locks
+// `query` to Express's own ParsedQs — all-string) so this stays assignable
+// as ts-rest `middleware` for a route whose query schema coerces to a
+// non-string type (getCalendar's month/year, z.coerce.number()) — the
+// first such route; every existing route's query stayed string-shaped, so
+// this mismatch never surfaced before.
 export const authenticate = async (
-  req: Request,
+  req: Request<any, any, any, any>,
   res: Response,
   next: NextFunction,
 ): Promise<void> => {
@@ -50,8 +56,9 @@ export const authenticate = async (
  * Gate a route to one or more roles. Runs after `authenticate`; returns 403 when
  * the authenticated user's current role is not in the allow-list.
  */
+// Same Request<any, any, any, any> reasoning as authenticate above.
 export const requireRole =
-  (...roles: Role[]): RequestHandler =>
+  (...roles: Role[]): RequestHandler<any, any, any, any> =>
   (req, res, next) => {
     if (!req.user) {
       res.status(401).json(unauthenticated);
