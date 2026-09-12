@@ -1323,7 +1323,12 @@ export const getCalendar: AppRouteQueryImplementation<typeof contract.getCalenda
       .filter((session) => sessionOverlapsMonth(session, range))
       .map((session) => ({
         ...toPublicSession(session),
-        event: { id: event.id, eventFamilyType: event.eventFamilyType, status: event.status },
+        event: {
+          id: event.id,
+          eventFamilyType: event.eventFamilyType,
+          status: event.status,
+          eventManager: event.eventManager.toString(),
+        },
       })),
   );
 

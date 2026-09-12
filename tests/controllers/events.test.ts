@@ -2316,7 +2316,12 @@ describe('GET /calendar', () => {
       startDate: expect.any(String),
       endDate: expect.any(String),
       sessionStatus: 'Active',
-      event: { id: created.body.id, eventFamilyType: 'Wedding', status: EventStatus.Tentative },
+      event: {
+        id: created.body.id,
+        eventFamilyType: 'Wedding',
+        status: EventStatus.Tentative,
+        eventManager: manager.id,
+      },
     });
   });
 

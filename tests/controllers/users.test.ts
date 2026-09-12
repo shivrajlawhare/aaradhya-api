@@ -32,6 +32,9 @@ const createUserAs = (token: string, body: object) =>
 const listUsersAs = (token: string) =>
   request(app).get('/users').set('Authorization', `Bearer ${token}`);
 
+const listEventManagersAs = (token: string) =>
+  request(app).get('/event-managers').set('Authorization', `Bearer ${token}`);
+
 const patchUserAs = (token: string, id: string, body: object) =>
   request(app).patch(`/users/${id}`).set('Authorization', `Bearer ${token}`).send(body);
 
@@ -203,6 +206,55 @@ describe('GET /users', () => {
       expect(account).not.toHaveProperty('passwordHash');
       expect(account).not.toHaveProperty('password');
     }
+  });
+});
+
+describe('GET /event-managers', () => {
+  it('returns 401 with no token', async () => {
+    const response = await request(app).get('/event-managers');
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 200 for any authenticated role (%s) — no role restriction, unlike GET /users',
+    async (role) => {
+      const token = await seedCaller(role);
+
+      const response = await listEventManagersAs(token);
+
+      expect(response.status).toBe(200);
+    },
+  );
+
+  it('returns only {id, name} for every Event Manager, no username/active/timestamps', async () => {
+    const token = await seedCaller();
+    await createUserAs(token, validPayload({ name: 'Priya Sharma', username: 'priya', role: Role.EventManager }));
+    await createUserAs(token, validPayload({ name: 'Front Desk', username: 'frontdesk', role: Role.Reception }));
+
+    const response = await listEventManagersAs(token);
+
+    expect(response.status).toBe(200);
+    // The caller's own seeded account + the one just-created EventManager —
+    // the Reception account created above must not appear.
+    expect(response.body).toHaveLength(2);
+    expect(response.body.map((manager: { name: string }) => manager.name).sort()).toEqual(['Caller', 'Priya Sharma']);
+    for (const manager of response.body) {
+      expect(Object.keys(manager).sort()).toEqual(['id', 'name']);
+    }
+  });
+
+  it('includes a deactivated Event Manager — still needed to resolve/display historical Events', async () => {
+    const token = await seedCaller();
+    const created = await createUserAs(
+      token,
+      validPayload({ name: 'Former Manager', username: 'former', role: Role.EventManager }),
+    );
+    await patchUserAs(token, created.body.id, { active: false });
+
+    const response = await listEventManagersAs(token);
+
+    expect(response.body.map((manager: { name: string }) => manager.name)).toContain('Former Manager');
   });
 });
 

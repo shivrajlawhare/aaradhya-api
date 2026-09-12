@@ -7,6 +7,7 @@ import { isDuplicateKeyError } from '../utils/mongo-errors.js';
 type CreateUserRequest = ServerInferRequest<typeof contract.createUser>;
 type CreateUserResponse = ServerInferResponses<typeof contract.createUser>;
 type ListUsersResponse = ServerInferResponses<typeof contract.listUsers>;
+type ListEventManagersResponse = ServerInferResponses<typeof contract.listEventManagers>;
 type UpdateUserRequest = ServerInferRequest<typeof contract.updateUser>;
 type UpdateUserResponse = ServerInferResponses<typeof contract.updateUser>;
 
@@ -55,6 +56,15 @@ export const createUser = async ({ body }: CreateUserRequest): Promise<CreateUse
 export const listUsers = async (): Promise<ListUsersResponse> => {
   const accounts = await User.find().sort({ createdAt: 1 });
   return { status: 200, body: accounts.map(toPublicUser) };
+};
+
+// Every Event Manager account, active or not — a deactivated manager can
+// still be the `event_manager` on historical Events, so the calendar
+// filter picker (STORY-037) needs to keep resolving/displaying their name
+// even after deactivation, not just currently-active managers.
+export const listEventManagers = async (): Promise<ListEventManagersResponse> => {
+  const accounts = await User.find({ role: Role.EventManager }).sort({ name: 1 });
+  return { status: 200, body: accounts.map((account) => ({ id: account.id, name: account.name })) };
 };
 
 // No self-deactivation guard, deliberately: authenticate() (STORY-003) already

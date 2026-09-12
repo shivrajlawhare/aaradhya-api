@@ -21,7 +21,7 @@ import {
 } from './controllers/events.js';
 import { checkHealth } from './controllers/health.js';
 import { createMenuItem, listMenuItems } from './controllers/menu-items.js';
-import { createUser, listUsers, updateUser } from './controllers/users.js';
+import { createUser, listEventManagers, listUsers, updateUser } from './controllers/users.js';
 import { authenticate, requireRole } from './middleware/auth.js';
 import { Role } from './models/user.js';
 
@@ -46,6 +46,10 @@ export const router = server.router(contract, {
   updateUser: {
     middleware: eventManagerOnly,
     handler: updateUser,
+  },
+  listEventManagers: {
+    middleware: authenticatedOnly,
+    handler: listEventManagers,
   },
   listChangeLog: {
     middleware: eventManagerOnly,

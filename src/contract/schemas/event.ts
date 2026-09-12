@@ -354,10 +354,17 @@ export const getCalendarQuerySchema = z.object({
 // documentsChecklist/clientContacts have no bearing on rendering a calendar
 // chip, and this story's own AC only asks for "enough of its parent Event's
 // data... to render a chip without a second round-trip per session."
+// eventManager added STORY-037 — the calendar's own Event Manager filter
+// chip filters the already-fetched month's data client-side (venue/status/
+// eventFamilyType were already present via sessionResultSchema/this
+// summary; eventManager was the one field missing), the same retroactive-
+// addition pattern this codebase has gone through repeatedly rather than
+// a second network round-trip per filter interaction.
 export const calendarEventSummarySchema = z.object({
   id: z.string(),
   eventFamilyType: z.string(),
   status: z.nativeEnum(EventStatus),
+  eventManager: z.string(),
 });
 
 // Reuses sessionResultSchema wholesale (including items/setup) rather than

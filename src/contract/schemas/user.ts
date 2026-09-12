@@ -37,3 +37,14 @@ export const updateUserBodySchema = z.object({
   active: z.boolean().optional(),
   role: z.nativeEnum(Role).optional(),
 });
+
+// Deliberately just {id, name} — GET /users (userResultSchema, above) is
+// EventManager-only, but STORY-037's Event Manager calendar filter picker
+// needs manager names for every role, since GET /calendar itself has no
+// role restriction. Least-privilege: this shape leaks nothing GET /users
+// wouldn't already leak to an EventManager caller, but stops at exactly
+// what a filter picker needs (no username/active/timestamps).
+export const eventManagerSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});

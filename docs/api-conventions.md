@@ -118,6 +118,21 @@ request shape, not which credential was wrong.
   request gets the normal `401` anyone else's would. Nothing new to build or
   test beyond confirming that existing mechanism covers it.
 
+### GET /event-managers — SETTLED (STORY-037 dependency)
+
+- `authenticatedOnly`, no role restriction — deliberately **unlike**
+  `GET /users` (`eventManagerOnly`). Added because `GET /calendar`'s own
+  Event Manager filter chip has no role restriction either, and every
+  other role needs to resolve manager names for it without being able to
+  call `GET /users` themselves.
+- Returns only `{ id, name }`, not `userResultSchema` — the narrowest
+  shape the calendar filter picker actually needs, so this route can't
+  leak `username`/`active`/timestamps to a role that could never see them
+  via `GET /users`.
+- Includes deactivated Event Managers too — a deactivated manager can
+  still be the `event_manager` on historical Events, and the filter must
+  keep resolving/displaying their name for those Events regardless.
+
 ### GET /change-log — SETTLED (STORY-009)
 
 - `requireRole(Role.EventManager)`, same as the other STORY-005/006/008 routes.
@@ -560,9 +575,11 @@ request shape, not which credential was wrong.
   Event's own sessions in-memory, so a matched Event's other,
   non-qualifying sessions never leak into the response.
 - Response reuses `sessionResultSchema` wholesale (via the existing
-  `toPublicSession`) plus a slim `event: { id, eventFamilyType, status }`
-  summary — not a hand-carved leaner shape — per this story's own "avoid a
-  second round-trip" reasoning.
+  `toPublicSession`) plus a slim `event: { id, eventFamilyType, status,
+  eventManager }` summary (`eventManager` added STORY-037, so the
+  calendar's own Event Manager filter chip can filter the already-fetched
+  month's data client-side) — not a hand-carved leaner shape — per this
+  story's own "avoid a second round-trip" reasoning.
 - The "session missing `start_date`/`end_date`" edge case is unreachable
   through the live API today (both fields are schema-required, and
   neither `createSessionBodySchema` nor `updateSessionBodySchema` can

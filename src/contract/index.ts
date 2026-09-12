@@ -33,6 +33,7 @@ import {
 } from './schemas/menu-item.js';
 import {
   createUserBodySchema,
+  eventManagerSummarySchema,
   updateUserBodySchema,
   userIdParamsSchema,
   userResultSchema,
@@ -97,6 +98,18 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: 'Toggle active and/or change role on a User Account (Event Manager only)',
+  },
+  // Deliberately not GET /users?role=EventManager — that route is
+  // EventManager-only (userResultSchema exposes username/active/timestamps
+  // no other role should see); this is a narrower {id, name} shape any
+  // authenticated caller can read, for STORY-037's calendar filter picker.
+  listEventManagers: {
+    method: 'GET',
+    path: '/event-managers',
+    responses: {
+      200: z.array(eventManagerSummarySchema),
+    },
+    summary: 'List {id, name} for every Event Manager account (any authenticated caller)',
   },
   listChangeLog: {
     method: 'GET',
