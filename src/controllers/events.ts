@@ -29,6 +29,7 @@ import {
 import { logChange } from '../services/change-log.js';
 import { computeTotalCost } from '../services/item.js';
 import { computeBalance } from '../services/payment.js';
+import { computeTotalCostSummary } from '../services/quotation.js';
 import { computeDurationDays, computeIsMultiDay, computeMonthRange, sessionOverlapsMonth } from '../services/session.js';
 import { isDuplicateKeyError } from '../utils/mongo-errors.js';
 import { escapeRegExp } from '../utils/regex.js';
@@ -834,6 +835,42 @@ export const updateEventExtras: AppRouteMutationImplementation<typeof contract.u
   );
 
   return { status: 200, body: toPublicExtras(updated.extras) };
+};
+
+// Recomputed from the Event's current live document on every call — no
+// separate stored "quotation" object exists (this story's own AC, per
+// Assumption A2), so there is nothing that could ever go stale between a
+// PATCH on sessions/accommodation/extras and the next call here.
+//
+// A Cancelled Session's venue cost and items are excluded from the rollup:
+// the SRS itself is silent on this (FR-QUO-2 says "per-Session"/"across
+// Sessions" with no status qualifier, and the one existing Cancelled-
+// exclusion precedent, sessionOverlapsRange, is explicitly scoped to
+// calendar/search visibility, not cost accounting — see this story's own
+// Decisions). This is this story's own judgment call: a cancelled Session
+// isn't actually happening, so its cost shouldn't be charged to the
+// client, consistent with §4.2's framing of Cancelled as "not part of
+// what's scheduled" everywhere else the concept already appears.
+export const getQuotationSummary: AppRouteQueryImplementation<typeof contract.getQuotationSummary> = async ({
+  params,
+}) => {
+  const event = await Event.findById(params.id);
+  if (!event) {
+    return eventNotFound;
+  }
+
+  const summary = computeTotalCostSummary({
+    sessions: event.sessions
+      .filter((session) => session.sessionStatus === SessionStatus.Active)
+      .map((session) => ({
+        venueCost: session.venueCost,
+        items: session.items.map((item) => ({ type: item.type, pax: item.pax, costPerPlate: item.costPerPlate })),
+      })),
+    accommodationTotalCharges: computeTotalCharges(event.accommodation?.roomLines ?? []),
+    extras: event.extras,
+  });
+
+  return { status: 200, body: summary };
 };
 
 const invalidSessionDateRange: Extract<CreateSessionResponse, { status: 400 }> = {

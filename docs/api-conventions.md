@@ -389,6 +389,35 @@ request shape, not which credential was wrong.
   render (see the `GET /events, GET /events/:id` section above for that
   recurring pattern).
 
+### GET /events/:id/quotation-summary — SETTLED (STORY-041)
+
+- **Any authenticated caller**, not `eventManagerOnly` — the one deliberate
+  exception among Event sub-resource routes: this story's own AC reasons
+  that F&B/Housekeeping/Reception may need partial visibility into totals
+  later, and restricting it now would block that for no present benefit.
+- Recomputed from the Event's current live document on every call —
+  `src/services/quotation.ts`'s `computeTotalCostSummary` (STORY-039) is
+  given a freshly built input every time, so there is no separate stored
+  "quotation" object that could ever go stale (Assumption A2). Editing a
+  Session's `venue_cost`, its Items, the Accommodation Block, or extras and
+  calling this endpoint again always reflects the change immediately.
+- **A Cancelled Session's venue cost and item costs are excluded from the
+  rollup.** This is not settled by the SRS (§5.4/FR-QUO-2 says
+  "per-Session"/"across Sessions" with no status qualifier) — it's this
+  story's own judgment call, made explicit because the existing
+  Cancelled-exclusion precedent (`sessionOverlapsRange`, used by the
+  calendar/search/dashboard) is scoped to visibility, not cost accounting.
+  Reasoning: a cancelled Session isn't actually happening, so its cost
+  shouldn't be charged to the client.
+- Response shape mirrors `computeTotalCostSummary`'s own output field-for-
+  field (`venueTotal`, `foodSubtotal`, `foodTotalInclGst`,
+  `accommodationTotal`, `extrasTotal`, `grandTotal`) — no renaming, no
+  extra fields.
+- A brand-new Event with no Sessions/Accommodation/extras yet returns an
+  all-zero summary, not an error — same "always a valid response, never a
+  null/undefined gap" convention every other rollup in this API already
+  follows.
+
 ### POST /events/:id/sessions — SETTLED (STORY-027)
 
 - Gated by `requireRole(Role.EventManager)`, same as the other write routes

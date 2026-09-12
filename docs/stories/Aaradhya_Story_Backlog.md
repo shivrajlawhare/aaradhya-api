@@ -765,6 +765,13 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** N/A (backend only).
 **Edge cases:** Calling this before any Session or Accommodation data exists on a brand-new Event (all-zero summary, not an error).
 
+**Decisions (v1):**
+- `authenticatedOnly`, not `eventManagerOnly` — the AC's own explicit reasoning (F&B/Housekeeping/Reception may need partial visibility later; restricting now blocks that for no present benefit).
+- **A Cancelled Session's venue cost and item costs are excluded from the rollup.** The SRS is silent on this specifically for §5.4/FR-QUO-2 (it says "per-Session"/"across Sessions" with no status qualifier), and the one existing Cancelled-exclusion precedent (`sessionOverlapsRange`) is explicitly scoped in its own comment to calendar/search visibility, not cost accounting — confirmed via research before implementing, since this genuinely wasn't settled anywhere. Judgment call: a cancelled Session isn't actually happening, so the client shouldn't be charged for its venue/food, consistent with how Cancelled is treated as "not part of what's scheduled" everywhere else it already appears (calendar, date search). Verified with a dedicated test (cancel a Session with a Meal item, confirm `venueTotal`/`foodSubtotal` both drop to 0).
+- The controller builds `QuotationSessionInput[]`/`accommodationTotalCharges`/`extras` straight from the live `EventDocument` on every call and passes them into STORY-039's `computeTotalCostSummary` unchanged — no caching, no stored quotation object, satisfying AC-2 (Assumption A2) by construction rather than by an explicit invalidation mechanism.
+- `event.extras` is passed straight through with no mapping layer, confirming STORY-040's own decision to name its three fields identically to `QuotationExtrasInput`.
+- Response schema (`quotationSummaryResultSchema`) mirrors `computeTotalCostSummary`'s output shape field-for-field rather than redeclaring or renaming anything, so the two can never drift silently out of sync in a way TypeScript wouldn't catch.
+
 ### STORY-042: Total Cost Summary UI panel
 **Flow:** An Event Manager (or anyone viewing the Overview tab) sees the live rollup, and edits the three extras fields inline.
 **Acceptance Criteria:**

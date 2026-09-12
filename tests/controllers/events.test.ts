@@ -62,6 +62,9 @@ const patchDocumentsChecklistAs = (token: string, id: string, body: object) =>
 const patchExtrasAs = (token: string, id: string, body: object) =>
   request(app).patch(`/events/${id}/extras`).set('Authorization', `Bearer ${token}`).send(body);
 
+const getQuotationSummaryAs = (token: string, id: string) =>
+  request(app).get(`/events/${id}/quotation-summary`).set('Authorization', `Bearer ${token}`);
+
 const postSessionAs = (token: string, id: string, body: object) =>
   request(app).post(`/events/${id}/sessions`).set('Authorization', `Bearer ${token}`).send(body);
 
@@ -1600,6 +1603,152 @@ describe('PATCH /events/:id/extras', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ decoration: 15000, photographer: 20000, bhatji: 5000 });
+  });
+});
+
+describe('GET /events/:id/quotation-summary', () => {
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+
+    const response = await request(app).get(`/events/${created.body.id}/quotation-summary`);
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 200 for a caller with role %s — any authenticated caller, not EventManager-only',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(creatorToken, validPayload(manager.id));
+      // Reuse creatorToken for the EventManager row instead of seeding a
+      // second EventManager caller — seedCaller's username is derived from
+      // the role, so two independent EventManager callers in one test would
+      // collide on the same username.
+      const token = role === Role.EventManager ? creatorToken : (await seedCaller(role)).token;
+
+      const response = await getQuotationSummaryAs(token, created.body.id);
+
+      expect(response.status).toBe(200);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await getQuotationSummaryAs(token, '507f1f77bcf86cd799439011');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' },
+    });
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await getQuotationSummaryAs(token, 'not-an-id');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns an all-zero summary for a brand-new Event with no Sessions/Accommodation/extras yet', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await getQuotationSummaryAs(token, created.body.id);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      venueTotal: 0,
+      foodSubtotal: 0,
+      foodTotalInclGst: 0,
+      accommodationTotal: 0,
+      extrasTotal: 0,
+      grandTotal: 0,
+    });
+  });
+
+  it('combines live session/item/accommodation/extras data into the exact expected rollup', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const eventId = created.body.id;
+
+    // Session 1: venueCost 5000, one Meal item (10 × 200 = 2000) plus one
+    // Event item (Muhurta — no cost fields, contributes 0).
+    const session1 = await postSessionAs(token, eventId, validSessionPayload({ venueCost: 5000 }));
+    await postItemAs(token, eventId, session1.body.id, validMealItemPayload({ pax: 10, costPerPlate: 200 }));
+    await postItemAs(token, eventId, session1.body.id, validEventItemPayload());
+
+    // Session 2: venueCost 3000, two Meal items (5 × 300 = 1500, 2 × 100 = 200).
+    const session2 = await postSessionAs(token, eventId, validSessionPayload({ venueCost: 3000 }));
+    await postItemAs(token, eventId, session2.body.id, validMealItemPayload({ pax: 5, costPerPlate: 300 }));
+    await postItemAs(token, eventId, session2.body.id, validMealItemPayload({ pax: 2, costPerPlate: 100 }));
+
+    // Accommodation: 5000 tariff × 2 rooms × 1.18 GST = 11800.
+    await patchAccommodationAs(token, eventId, {
+      roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2 }],
+    });
+
+    await patchExtrasAs(token, eventId, { decoration: 1000, photographer: 1500, bhatji: 500 });
+
+    const response = await getQuotationSummaryAs(token, eventId);
+
+    // venueTotal = 5000 + 3000 = 8000. foodSubtotal = 2000 + 1500 + 200 =
+    // 3700. foodTotalInclGst = 3700 × 1.18 = 4366. accommodationTotal =
+    // 11800. extrasTotal = 1000 + 1500 + 500 = 3000. grandTotal = 8000 +
+    // 4366 + 11800 + 3000 = 27166 — the exact same fixture STORY-039's own
+    // unit tests use, confirming this endpoint wires live data through
+    // computeTotalCostSummary with no drift.
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      venueTotal: 8000,
+      foodSubtotal: 3700,
+      foodTotalInclGst: 4366,
+      accommodationTotal: 11800,
+      extrasTotal: 3000,
+      grandTotal: 27166,
+    });
+  });
+
+  it("reflects a Session's edited venue_cost immediately, with no separate stored quotation object", async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const eventId = created.body.id;
+    const session = await postSessionAs(token, eventId, validSessionPayload({ venueCost: 5000 }));
+
+    const before = await getQuotationSummaryAs(token, eventId);
+    expect(before.body.venueTotal).toBe(5000);
+
+    await patchSessionAs(token, eventId, session.body.id, { venueCost: 9000 });
+    const after = await getQuotationSummaryAs(token, eventId);
+
+    expect(after.body.venueTotal).toBe(9000);
+  });
+
+  it('excludes a Cancelled Session — its venue cost and item costs are not charged to the client', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const eventId = created.body.id;
+    const session = await postSessionAs(token, eventId, validSessionPayload({ venueCost: 5000 }));
+    await postItemAs(token, eventId, session.body.id, validMealItemPayload({ pax: 10, costPerPlate: 200 }));
+
+    const beforeCancel = await getQuotationSummaryAs(token, eventId);
+    expect(beforeCancel.body.venueTotal).toBe(5000);
+    expect(beforeCancel.body.foodSubtotal).toBe(2000);
+
+    await patchSessionAs(token, eventId, session.body.id, { sessionStatus: 'Cancelled' });
+    const afterCancel = await getQuotationSummaryAs(token, eventId);
+
+    expect(afterCancel.body.venueTotal).toBe(0);
+    expect(afterCancel.body.foodSubtotal).toBe(0);
   });
 });
 

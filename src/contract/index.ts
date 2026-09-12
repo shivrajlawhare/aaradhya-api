@@ -18,6 +18,7 @@ import {
   getCalendarQuerySchema,
   itemResultSchema,
   paymentResultSchema,
+  quotationSummaryResultSchema,
   searchEventsQuerySchema,
   sessionResultSchema,
   updateAccommodationBodySchema,
@@ -219,6 +220,16 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: "Edit an Event's Quotation extras — Decoration/Photographer/Bhatji (Event Manager only)",
+  },
+  getQuotationSummary: {
+    method: 'GET',
+    path: '/events/:id/quotation-summary',
+    pathParams: eventIdParamsSchema,
+    responses: {
+      200: quotationSummaryResultSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Get an Event's live Total Cost Summary rollup (any authenticated caller)",
   },
   createSession: {
     method: 'POST',

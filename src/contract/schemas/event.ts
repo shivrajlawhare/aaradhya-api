@@ -155,6 +155,19 @@ export const updateEventExtrasBodySchema = extrasFieldsSchema.strict();
 // instantiated" convention payment/documentsChecklist already use.
 export const extrasResultSchema = extrasFieldsSchema.required();
 
+// The exact 6 fields src/services/quotation.ts' computeTotalCostSummary
+// produces (STORY-039) — this schema doesn't redeclare that shape, it just
+// mirrors it field-for-field so GET /events/:id/quotation-summary (STORY-041)
+// has a typed response.
+export const quotationSummaryResultSchema = z.object({
+  venueTotal: z.number(),
+  foodSubtotal: z.number(),
+  foodTotalInclGst: z.number(),
+  accommodationTotal: z.number(),
+  extrasTotal: z.number(),
+  grandTotal: z.number(),
+});
+
 // setup is optional as a whole (STORY-027: an Event Manager may add a
 // Session without touching setup at all yet) and every field within it is
 // optional too — a caller sends only what it's chosen so far, the rest fall
