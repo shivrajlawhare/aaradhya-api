@@ -368,6 +368,13 @@ export const eventResultSchema = z.object({
   accommodation: accommodationResultSchema,
   payment: paymentResultSchema,
   documentsChecklist: documentsChecklistResultSchema,
+  // Added STORY-042 — the Overview tab's Total Cost Summary panel needs
+  // the current decoration/photographer/bhatji values to prefill its three
+  // editable fields, the same "exposed the moment a UI story actually
+  // needs to read current state on first render" recurrence
+  // accommodation/payment/documentsChecklist/sessions each already went
+  // through.
+  extras: extrasResultSchema,
   sessions: z.array(sessionResultSchema),
   createdBy: z.string(),
   createdAt: z.date(),

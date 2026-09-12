@@ -230,6 +230,12 @@ request shape, not which credential was wrong.
   read/edit current Item data. Reuses STORY-032's own `toPublicItem`,
   each element carrying the same derived `totalCost` the Item
   sub-resource routes already return.
+- **`eventResultSchema` includes `extras` as of STORY-042**, the sixth
+  occurrence of the same retroactive-addition pattern (STORY-042's Total
+  Cost Summary panel needs to read current `decoration`/`photographer`/
+  `bhatji` values to prefill its three editable fields; STORY-040 only
+  added the PATCH). Reuses STORY-040's own `toPublicExtras`, so the shape
+  is identical to that PATCH endpoint's response body.
 
 ### PATCH /events/:id — SETTLED (STORY-014)
 

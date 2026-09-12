@@ -782,6 +782,10 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** `surface-2`, `type-display` (grand total, Fraunces), `type-body-m` (line items), `accent-deep` (grand total color), tabular-nums throughout, `space-12`.
 **Edge cases:** A grand total large enough to need thousands-grouping (must render correctly, not just as a raw digit string).
 
+**Decisions (v1) — aaradhya-api side of STORY-042:**
+- `eventResultSchema` now includes `extras` — the sixth occurrence of the retroactive-field-addition pattern (`accommodation`/`payment`/`documentsChecklist`/`sessions`/`items` before it): the panel needs current `decoration`/`photographer`/`bhatji` values to prefill its three editable fields on first render, and STORY-040 only ever added the PATCH, never a way to read current values back on the parent Event. Reuses STORY-040's own `toPublicExtras`.
+- No other backend change needed — `GET /events/:id/quotation-summary` (STORY-041) already returns everything else the panel displays.
+
 ### STORY-043: Quotation PDF generation endpoint
 **Flow:** An Event Manager requests the client-facing PDF; the server renders the Aaradhya template (Client Details → Event Details per Session → Accommodation → F&B per Session → Total Cost Summary → static T&C/Documents/Bank footer) from the Event's current live data.
 **Acceptance Criteria:**

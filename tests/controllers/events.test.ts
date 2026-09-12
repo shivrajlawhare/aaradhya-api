@@ -663,6 +663,27 @@ describe('GET /events/:id', () => {
     });
   });
 
+  it('includes extras, defaulting to 0 for a freshly created Event', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.extras).toEqual({ decoration: 0, photographer: 0, bhatji: 0 });
+  });
+
+  it('reflects a prior PATCH /events/:id/extras edit', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchExtrasAs(token, created.body.id, { decoration: 15000 });
+
+    const response = await getEventAs(token, created.body.id);
+
+    expect(response.body.extras).toEqual({ decoration: 15000, photographer: 0, bhatji: 0 });
+  });
+
   it('includes sessions, defaulting to an empty array for a freshly created Event', async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();

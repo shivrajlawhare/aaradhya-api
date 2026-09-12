@@ -256,6 +256,7 @@ const toPublicEvent = (event: EventDocument) => ({
   accommodation: toPublicAccommodation(event.accommodation),
   payment: toPublicPayment(event.payment),
   documentsChecklist: toPublicDocumentsChecklist(event.documentsChecklist),
+  extras: toPublicExtras(event.extras),
   sessions: event.sessions.map(toPublicSession),
   createdBy: event.createdBy.toString(),
   createdAt: event.createdAt,
