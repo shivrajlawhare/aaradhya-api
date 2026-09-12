@@ -575,6 +575,48 @@ request shape, not which credential was wrong.
   per Event per day is STORY-035's own client-side rendering job, not
   this endpoint's (this story's own edge case).
 
+### GET /events/search — SETTLED (STORY-036)
+
+- `authenticatedOnly`, no role restriction — same as `GET /events`/
+  `GET /events/:id`/`GET /calendar`.
+- **`services/session.ts`'s `sessionOverlapsMonth` (STORY-034) is now a
+  thin wrapper over a new, more general `sessionOverlapsRange(session,
+  {from?, to?})`**, both bounds independently optional (an omitted side
+  means "no bound on that side"). This story's own AC ("same
+  interval-overlap logic as STORY-034") is a literal code reuse, not a
+  parallel reimplementation — STORY-034's own behavior/tests are
+  unaffected (verified against the full suite).
+- **`venue`/`from`/`to` combine into one `$elemMatch` (same
+  "same-session, not different array elements" reasoning `GET /calendar`
+  already established); `status`/`eventManager`/`eventFamilyType` stay
+  plain top-level query keys** Mongo ANDs automatically as sibling
+  conditions, no `$elemMatch` needed for those three.
+- **The full §4.2 overlap rule (Active-only, both dates present) applies
+  to the `venue` filter too, not only the date range** — read from
+  FR-SES-8's own "uses the same interval-overlap logic as the calendar,
+  per §4.2," where §4.2's rule includes the `session_status == Active`
+  condition, not just the date comparison. A Cancelled Session's venue
+  never matches a venue search, matching `GET /calendar`'s own precedent
+  for the identical underlying rule.
+- **No in-memory re-filter, unlike `GET /calendar`** — this endpoint
+  returns whole Events (`toPublicEvent`, the same shape `GET /events`
+  already returns), not flattened Sessions, so `$elemMatch`'s own "at
+  least one Session satisfies every condition" is sufficient by itself.
+- **Query param is `eventFamilyType`, not `eventType`** — the AC's own
+  prose shorthand doesn't match the actual persisted field name
+  (established since STORY-011); naming the param after the real field
+  avoids a second name for one concept.
+- **Registered before `GET /events/:id` in the contract's own route
+  order** — `createExpressEndpoints` mounts routes in the contract
+  object's key order, and Express matches path patterns in registration
+  order; `/events/:id` would otherwise swallow `/events/search` requests
+  first, treating `"search"` as an event id.
+- `status`/`venue`/`eventFamilyType` are exact matches, not
+  substring/case-insensitive search — closed-selection filters (existing
+  distinct values), unlike `GET /menu-items?search=`'s free-text search.
+- Mongoose v9 renamed `FilterQuery` to `QueryFilter` — a real type rename,
+  not a typo; worth remembering for any future Mongoose-filter-typed code.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

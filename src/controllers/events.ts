@@ -1,4 +1,4 @@
-import { Error as MongooseError, Types } from 'mongoose';
+import { Error as MongooseError, Types, type QueryFilter } from 'mongoose';
 import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from '@ts-rest/express';
 import type { ServerInferRequest, ServerInferResponses } from '@ts-rest/core';
 import type { contract } from '../contract/index.js';
@@ -11,6 +11,7 @@ import {
   type AccommodationAttributes,
   type ClientContactAttributes,
   type DocumentsChecklistAttributes,
+  type EventAttributes,
   type EventDocument,
   type PaymentAttributes,
   type RoomLineAttributes,
@@ -323,6 +324,46 @@ export const createEvent: AppRouteMutationImplementation<typeof contract.createE
 // STORY-011's schema persists is returned as-is to any authenticated caller.
 export const listEvents: AppRouteQueryImplementation<typeof contract.listEvents> = async () => {
   const events = await Event.find().sort({ createdAt: 1 });
+  return { status: 200, body: events.map(toPublicEvent) };
+};
+
+// status/eventManager/eventFamilyType are plain top-level Event fields —
+// Mongo ANDs sibling query keys automatically, no $elemMatch needed to
+// combine them with each other or with the sessions-level condition below.
+// venue/from/to are all Session-level, so they're combined into ONE
+// $elemMatch — this story's own AC ("same interval-overlap logic as
+// STORY-034") plus FR-SES-8 ("uses the same interval-overlap logic as the
+// calendar, per §4.2") read as: the full §4.2 rule, not just its date-math
+// half, so a Cancelled session (or one missing a date) is excluded from a
+// venue/date search exactly as it is from the calendar, not just from a
+// date-range search specifically. Returning whole Events (not flattened
+// sessions, unlike STORY-034) means $elemMatch alone is sufficient — no
+// further in-memory re-filter is needed, since "this Event has at least
+// one qualifying Session" is exactly what should make it match.
+export const searchEvents: AppRouteQueryImplementation<typeof contract.searchEvents> = async ({ query }) => {
+  const filter: QueryFilter<EventAttributes> = {};
+
+  if (query.status) {
+    filter.status = query.status;
+  }
+  if (query.eventManager) {
+    filter.eventManager = query.eventManager;
+  }
+  if (query.eventFamilyType) {
+    filter.eventFamilyType = query.eventFamilyType;
+  }
+  if (query.venue || query.from || query.to) {
+    filter.sessions = {
+      $elemMatch: {
+        sessionStatus: SessionStatus.Active,
+        ...(query.venue ? { venue: query.venue } : {}),
+        ...(query.to ? { startDate: { $lte: query.to } } : {}),
+        ...(query.from ? { endDate: { $gte: query.from } } : {}),
+      },
+    };
+  }
+
+  const events = await Event.find(filter).sort({ createdAt: 1 });
   return { status: 200, body: events.map(toPublicEvent) };
 };
 

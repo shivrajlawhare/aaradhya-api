@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { SessionStatus } from '../../src/models/event.js';
-import { computeDurationDays, computeIsMultiDay, computeMonthRange, sessionOverlapsMonth } from '../../src/services/session.js';
+import {
+  computeDurationDays,
+  computeIsMultiDay,
+  computeMonthRange,
+  sessionOverlapsMonth,
+  sessionOverlapsRange,
+} from '../../src/services/session.js';
 
 describe('computeDurationDays', () => {
   it('counts a same-day session as 1 day, not 0', () => {
@@ -136,5 +142,82 @@ describe('sessionOverlapsMonth', () => {
 
     expect(sessionOverlapsMonth(missingStart, september2026)).toBe(false);
     expect(sessionOverlapsMonth(missingEnd, september2026)).toBe(false);
+  });
+});
+
+describe('sessionOverlapsRange', () => {
+  it('matches a session whose range is entirely inside a fully-bounded from/to range', () => {
+    const session = {
+      sessionStatus: SessionStatus.Active,
+      startDate: new Date('2026-09-12T00:00:00.000Z'),
+      endDate: new Date('2026-09-14T00:00:00.000Z'),
+    };
+    const range = { from: new Date('2026-09-01T00:00:00.000Z'), to: new Date('2026-09-30T00:00:00.000Z') };
+
+    expect(sessionOverlapsRange(session, range)).toBe(true);
+  });
+
+  it('matches a session that only partially overlaps the queried range — overlap, not containment (this story own AC)', () => {
+    // The session starts before `from` and ends before `to` — it is not
+    // contained by the range, but it does overlap it.
+    const session = {
+      sessionStatus: SessionStatus.Active,
+      startDate: new Date('2026-09-10T00:00:00.000Z'),
+      endDate: new Date('2026-09-14T00:00:00.000Z'),
+    };
+    const range = { from: new Date('2026-09-12T00:00:00.000Z'), to: new Date('2026-09-20T00:00:00.000Z') };
+
+    expect(sessionOverlapsRange(session, range)).toBe(true);
+  });
+
+  it('excludes a session entirely before the queried range', () => {
+    const session = {
+      sessionStatus: SessionStatus.Active,
+      startDate: new Date('2026-09-01T00:00:00.000Z'),
+      endDate: new Date('2026-09-05T00:00:00.000Z'),
+    };
+    const range = { from: new Date('2026-09-12T00:00:00.000Z'), to: new Date('2026-09-20T00:00:00.000Z') };
+
+    expect(sessionOverlapsRange(session, range)).toBe(false);
+  });
+
+  it('matches a session on or after `from` with no upper bound when `to` is omitted', () => {
+    const session = {
+      sessionStatus: SessionStatus.Active,
+      startDate: new Date('2027-01-01T00:00:00.000Z'),
+      endDate: new Date('2027-01-02T00:00:00.000Z'),
+    };
+
+    expect(sessionOverlapsRange(session, { from: new Date('2026-09-12T00:00:00.000Z') })).toBe(true);
+  });
+
+  it('matches a session on or before `to` with no lower bound when `from` is omitted', () => {
+    const session = {
+      sessionStatus: SessionStatus.Active,
+      startDate: new Date('2020-01-01T00:00:00.000Z'),
+      endDate: new Date('2020-01-02T00:00:00.000Z'),
+    };
+
+    expect(sessionOverlapsRange(session, { to: new Date('2026-09-12T00:00:00.000Z') })).toBe(true);
+  });
+
+  it('matches every Active, dated session when neither from nor to is given', () => {
+    const session = {
+      sessionStatus: SessionStatus.Active,
+      startDate: new Date('2020-01-01T00:00:00.000Z'),
+      endDate: new Date('2020-01-02T00:00:00.000Z'),
+    };
+
+    expect(sessionOverlapsRange(session, {})).toBe(true);
+  });
+
+  it('excludes a Cancelled session even with no date bounds at all', () => {
+    const session = {
+      sessionStatus: SessionStatus.Cancelled,
+      startDate: new Date('2020-01-01T00:00:00.000Z'),
+      endDate: new Date('2020-01-02T00:00:00.000Z'),
+    };
+
+    expect(sessionOverlapsRange(session, {})).toBe(false);
   });
 });

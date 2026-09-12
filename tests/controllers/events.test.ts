@@ -41,6 +41,9 @@ const createEventAs = (token: string, body: object) =>
 const listEventsAs = (token: string) =>
   request(app).get('/events').set('Authorization', `Bearer ${token}`);
 
+const searchEventsAs = (token: string, query: Record<string, string>) =>
+  request(app).get('/events/search').query(query).set('Authorization', `Bearer ${token}`);
+
 const getEventAs = (token: string, id: string) =>
   request(app).get(`/events/${id}`).set('Authorization', `Bearer ${token}`);
 
@@ -341,6 +344,179 @@ describe('GET /events', () => {
     const response = await listEventsAs(token);
 
     expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
+});
+
+describe('GET /events/search', () => {
+  it('returns 401 with no token', async () => {
+    const response = await request(app).get('/events/search');
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 200 for any authenticated role (%s) — no role restriction, same as GET /events',
+    async (role) => {
+      const { token } = await seedCaller(role);
+
+      const response = await searchEventsAs(token, {});
+
+      expect(response.status).toBe(200);
+    },
+  );
+
+  it("is not swallowed by GET /events/:id — the literal path wins, not treated as an event id", async () => {
+    const { token } = await seedCaller();
+
+    const response = await searchEventsAs(token, {});
+
+    expect(response.status).toBe(200);
+    expect(Array.isArray(response.body)).toBe(true);
+  });
+
+  it('returns 200 with an empty array when no Event matches', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    await createEventAs(token, validPayload(manager.id));
+
+    const response = await searchEventsAs(token, { eventFamilyType: 'Corporate Offsite' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
+
+  it('returns a session whose range only partially overlaps the query range — overlap, not containment (this story own AC)', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    // The session starts before the query's `from` and ends before the
+    // query's `to` — not contained by the query range, but it does overlap it.
+    await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({ startDate: '2026-09-10', endDate: '2026-09-14' }),
+    );
+
+    const response = await searchEventsAs(token, { from: '2026-09-12', to: '2026-09-20' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]?.id).toBe(created.body.id);
+  });
+
+  it('excludes an Event whose only Session falls entirely outside the queried date range', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({ startDate: '2026-08-01', endDate: '2026-08-05' }),
+    );
+
+    const response = await searchEventsAs(token, { from: '2026-09-12', to: '2026-09-20' });
+
+    expect(response.body).toEqual([]);
+  });
+
+  it('omitting the date range entirely returns all Events matching the other filters', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await postSessionAs(
+      token,
+      created.body.id,
+      validSessionPayload({ startDate: '2020-01-01', endDate: '2020-01-01' }),
+    );
+
+    const response = await searchEventsAs(token, { eventFamilyType: 'Wedding' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(1);
+  });
+
+  it('narrows by status', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const tentative = await createEventAs(token, validPayload(manager.id));
+    const confirmed = await createEventAs(token, validPayload(manager.id));
+    await patchEventAs(token, confirmed.body.id, { status: 'Confirmed' });
+
+    const response = await searchEventsAs(token, { status: 'Confirmed' });
+
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]?.id).toBe(confirmed.body.id);
+    expect(response.body.map((event: { id: string }) => event.id)).not.toContain(tentative.body.id);
+  });
+
+  it('narrows by venue — an Event whose Session venue does not match is excluded', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const lawnEvent = await createEventAs(token, validPayload(manager.id));
+    await postSessionAs(token, lawnEvent.body.id, validSessionPayload({ venue: 'Lawn' }));
+    const poolsideEvent = await createEventAs(token, validPayload(manager.id));
+    await postSessionAs(token, poolsideEvent.body.id, validSessionPayload({ venue: 'Poolside' }));
+
+    const response = await searchEventsAs(token, { venue: 'Lawn' });
+
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]?.id).toBe(lawnEvent.body.id);
+  });
+
+  it('narrows by eventManager', async () => {
+    const { token } = await seedCaller();
+    const managerA = await seedEventManager();
+    const managerB = await seedEventManager();
+    const eventA = await createEventAs(token, validPayload(managerA.id));
+    await createEventAs(token, validPayload(managerB.id));
+
+    const response = await searchEventsAs(token, { eventManager: managerA.id });
+
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]?.id).toBe(eventA.body.id);
+  });
+
+  it('narrows by eventFamilyType, including a custom (non-enum) value entered at creation time', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    await createEventAs(token, validPayload(manager.id, { eventFamilyType: 'Wedding' }));
+    const custom = await createEventAs(
+      token,
+      validPayload(manager.id, { eventFamilyType: 'Corporate Retreat (Custom)' }),
+    );
+
+    const response = await searchEventsAs(token, { eventFamilyType: 'Corporate Retreat (Custom)' });
+
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]?.id).toBe(custom.body.id);
+  });
+
+  it('combines multiple filters with AND semantics', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const matching = await createEventAs(token, validPayload(manager.id, { eventFamilyType: 'Wedding' }));
+    await postSessionAs(token, matching.body.id, validSessionPayload({ venue: 'Lawn' }));
+    const wrongVenue = await createEventAs(token, validPayload(manager.id, { eventFamilyType: 'Wedding' }));
+    await postSessionAs(token, wrongVenue.body.id, validSessionPayload({ venue: 'Poolside' }));
+    const wrongType = await createEventAs(token, validPayload(manager.id, { eventFamilyType: 'Corporate Offsite' }));
+    await postSessionAs(token, wrongType.body.id, validSessionPayload({ venue: 'Lawn' }));
+
+    const response = await searchEventsAs(token, { eventFamilyType: 'Wedding', venue: 'Lawn' });
+
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]?.id).toBe(matching.body.id);
+  });
+
+  it('excludes a Cancelled Session from a venue search, same overlap logic as the calendar', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload({ venue: 'Lawn' }));
+    await patchSessionAs(token, created.body.id, session.body.id, { sessionStatus: 'Cancelled' });
+
+    const response = await searchEventsAs(token, { venue: 'Lawn' });
+
     expect(response.body).toEqual([]);
   });
 });

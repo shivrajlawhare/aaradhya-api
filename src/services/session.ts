@@ -50,17 +50,37 @@ interface CalendarSessionFields {
   endDate?: Date;
 }
 
-// The overlap test itself (this story's own AC + Spec_Amendment's finalized
-// calendar rendering rule): a Cancelled session, or one missing either date
-// (an incomplete draft — schema-required today, but the exclusion is this
-// story's own explicit edge case, so it's enforced here defensively rather
-// than assumed away), never matches. Shared by the DB query (as the
-// equivalent $elemMatch condition) and the controller's own in-memory
-// filter of each matched Event's sessions, so the two can never drift out
-// of sync with each other.
-export const sessionOverlapsMonth = (session: CalendarSessionFields, range: MonthRange): boolean =>
+// Either bound may be absent — an omitted `to` means "no upper bound" (an
+// open-ended "everything from `from` onward"), not "matches nothing";
+// likewise for an omitted `from`. STORY-034's own month query always
+// supplies both (computeMonthRange never returns a partial range), so
+// sessionOverlapsMonth below is the special case where neither bound is
+// ever omitted.
+export interface DateRange {
+  from?: Date;
+  to?: Date;
+}
+
+// The one overlap test both STORY-034 (GET /calendar) and STORY-036
+// (GET /events/search) share — "the same interval-overlap logic as
+// STORY-034" is this story's own AC, made literal by having both call the
+// exact same function rather than two implementations that could drift.
+// A Cancelled session, or one missing either date (an incomplete draft —
+// schema-required today, but the exclusion is STORY-034's own explicit
+// edge case, so it's enforced here defensively rather than assumed away),
+// never matches. Shared by each caller's DB query (as the equivalent
+// $elemMatch condition) and, where the caller needs to flatten to
+// individual sessions (STORY-034), an in-memory re-filter — so the two
+// layers can never drift out of sync with each other.
+export const sessionOverlapsRange = (session: CalendarSessionFields, range: DateRange): boolean =>
   session.sessionStatus === SessionStatus.Active &&
   session.startDate !== undefined &&
   session.endDate !== undefined &&
-  session.startDate.getTime() <= range.monthEnd.getTime() &&
-  session.endDate.getTime() >= range.monthStart.getTime();
+  (range.to === undefined || session.startDate.getTime() <= range.to.getTime()) &&
+  (range.from === undefined || session.endDate.getTime() >= range.from.getTime());
+
+// STORY-034's own month-bounded case — both sides of the range are always
+// present (computeMonthRange never returns a partial range), so this is
+// just sessionOverlapsRange with monthStart/monthEnd renamed to from/to.
+export const sessionOverlapsMonth = (session: CalendarSessionFields, range: MonthRange): boolean =>
+  sessionOverlapsRange(session, { from: range.monthStart, to: range.monthEnd });

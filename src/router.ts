@@ -11,6 +11,7 @@ import {
   getCalendar,
   getEvent,
   listEvents,
+  searchEvents,
   updateDocumentsChecklist,
   updateEvent,
   updateEventAccommodation,
@@ -57,6 +58,10 @@ export const router = server.router(contract, {
   listEvents: {
     middleware: authenticatedOnly,
     handler: listEvents,
+  },
+  searchEvents: {
+    middleware: authenticatedOnly,
+    handler: searchEvents,
   },
   getEvent: {
     middleware: authenticatedOnly,

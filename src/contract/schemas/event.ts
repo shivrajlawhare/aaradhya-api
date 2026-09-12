@@ -368,3 +368,24 @@ export const calendarEventSummarySchema = z.object({
 export const calendarSessionResultSchema = sessionResultSchema.extend({
   event: calendarEventSummarySchema,
 });
+
+// Every field optional — "omitting the date range entirely returns all
+// Events matching the other filters" (this story's own AC), and each of
+// the four sibling filters (status/venue/eventManager/eventFamilyType) is
+// independently optional too, combined with AND semantics only when
+// actually supplied. `from`/`to` are independently optional as well (not
+// an all-or-nothing pair) — an omitted side of the range simply means "no
+// bound on that side," matching the plain-language reading of the range
+// test itself (`start_date <= to AND end_date >= from`). `eventFamilyType`
+// is this story's own "event_type" filter — named after the actual
+// persisted field (docs/stories/Aaradhya_Story_Backlog.md's own field
+// table calls it eventFamilyType throughout) rather than introducing a
+// second name for the same concept.
+export const searchEventsQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  status: z.nativeEnum(EventStatus).optional(),
+  venue: z.string().trim().min(1).optional(),
+  eventManager: objectIdSchema('Invalid event manager id.').optional(),
+  eventFamilyType: z.string().trim().min(1).optional(),
+});

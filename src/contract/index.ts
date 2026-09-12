@@ -17,6 +17,7 @@ import {
   getCalendarQuerySchema,
   itemResultSchema,
   paymentResultSchema,
+  searchEventsQuerySchema,
   sessionResultSchema,
   updateAccommodationBodySchema,
   updateDocumentsChecklistBodySchema,
@@ -123,6 +124,20 @@ export const contract = c.router({
       200: z.array(eventResultSchema),
     },
     summary: 'List all Events (any authenticated caller)',
+  },
+  // Registered before getEvent (path '/events/:id') so Express tries this
+  // more specific literal path first — otherwise '/events/search' would
+  // match '/events/:id' with id='search' and never reach this handler at
+  // all, since createExpressEndpoints mounts routes in this object's own
+  // key order.
+  searchEvents: {
+    method: 'GET',
+    path: '/events/search',
+    query: searchEventsQuerySchema,
+    responses: {
+      200: z.array(eventResultSchema),
+    },
+    summary: 'Search Events by date-range overlap plus status/venue/eventManager/eventFamilyType filters (any authenticated caller)',
   },
   getEvent: {
     method: 'GET',
