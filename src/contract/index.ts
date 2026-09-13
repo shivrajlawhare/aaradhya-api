@@ -15,6 +15,7 @@ import {
   eventSessionItemParamsSchema,
   eventSessionParamsSchema,
   extrasResultSchema,
+  filteredEventResultSchema,
   getCalendarQuerySchema,
   itemResultSchema,
   paymentResultSchema,
@@ -155,15 +156,19 @@ export const contract = c.router({
     },
     summary: 'Search Events by date-range overlap plus status/venue/eventManager/eventFamilyType filters (any authenticated caller)',
   },
+  // 200 is filteredEventResultSchema, not eventResultSchema (STORY-046) —
+  // the only route whose response shape genuinely depends on req.user.role;
+  // every other route returning an Event stays EventManager-only, so
+  // eventResultSchema itself stays fully required/unchanged for them.
   getEvent: {
     method: 'GET',
     path: '/events/:id',
     pathParams: eventIdParamsSchema,
     responses: {
-      200: eventResultSchema,
+      200: filteredEventResultSchema,
       404: apiErrorSchema,
     },
-    summary: 'Get one Event by id (any authenticated caller)',
+    summary: 'Get one Event by id, fields filtered per the caller role (any authenticated caller)',
   },
   updateEvent: {
     method: 'PATCH',

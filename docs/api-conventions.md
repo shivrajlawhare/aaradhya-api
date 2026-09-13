@@ -236,6 +236,23 @@ request shape, not which credential was wrong.
   `bhatji` values to prefill its three editable fields; STORY-040 only
   added the PATCH). Reuses STORY-040's own `toPublicExtras`, so the shape
   is identical to that PATCH endpoint's response body.
+- **`GET /events/:id`'s response shape now depends on `req.user.role`, as
+  of STORY-046** — this is the gap this section's own second bullet named
+  from the very start ("Module 5.5... is where this actually gets
+  closed"). `eventResultSchema` itself is unchanged and still used by
+  `POST /events`, `GET /events`, and `PATCH /events/:id` (all
+  EventManager-only in practice); only `GET /events/:id` now returns a
+  new, separate `filteredEventResultSchema` (built via `.extend()` on
+  `eventResultSchema` and its nested schemas, every role-conditional field
+  turned `.optional()`). `EventManager` sees everything unchanged; every
+  other role gets `payment`/`extras`/session `venueCost`/Item
+  `costPerPlate`+`totalCost`/room-line `tariff`+`totalInclGst`/
+  accommodation `totalCharges` genuinely absent from the response (not
+  present-but-null) — see `src/services/event-visibility.ts` for the full
+  per-role field matrix and its reasoning, and STORY-046's own Decisions
+  for the policy call behind "hide every money figure, not just the
+  literal Payment Record." `GET /events` itself remains unfiltered — this
+  story's own scope is `GET /events/:id` only.
 
 ### PATCH /events/:id — SETTLED (STORY-014)
 

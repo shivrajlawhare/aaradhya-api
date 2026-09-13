@@ -561,7 +561,7 @@ describe('GET /events/:id', () => {
   });
 
   it.each([Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 200 for any authenticated role (%s) — no role restriction yet',
+    'returns 200 for any authenticated role (%s) — role-based field filtering, not a 403 (STORY-046)',
     async (role) => {
       const manager = await seedEventManager();
       const creatorToken = await signSessionToken({ id: manager.id, role: manager.role });
@@ -780,6 +780,151 @@ describe('GET /events/:id', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
+  const buildFixtureEvent = async () => {
+    const { token: managerToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(
+      managerToken,
+      validPayload(manager.id, {
+        clientContacts: [{ name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' }],
+      }),
+    );
+    const eventId = created.body.id;
+    const session = await postSessionAs(
+      managerToken,
+      eventId,
+      validSessionPayload({ venue: 'Lawn', setup: { seating: 'Theatre', tableCount: 5 } }),
+    );
+    await postItemAs(managerToken, eventId, session.body.id, validMealItemPayload({ pax: 10, costPerPlate: 200 }));
+    await postItemAs(managerToken, eventId, session.body.id, validEventItemPayload());
+    await patchAccommodationAs(managerToken, eventId, {
+      roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }],
+    });
+    await patchPaymentAs(managerToken, eventId, { totalEstimatedAmount: 50000 });
+    await patchExtrasAs(managerToken, eventId, { decoration: 1000 });
+    return { eventId, managerToken };
+  };
+
+  // Reuses managerToken for the EventManager row instead of seeding a
+  // second EventManager caller — seedCaller's username is derived from the
+  // role, so two independent EventManager callers in one test would
+  // collide on the same username (same fix STORY-041's own tests use).
+  const tokenForRole = async (role: Role, managerToken: string): Promise<string> =>
+    role === Role.EventManager ? managerToken : (await seedCaller(role)).token;
+
+  it('EventManager gets every field — no regression from STORY-013', async () => {
+    const { eventId, managerToken } = await buildFixtureEvent();
+
+    const response = await getEventAs(managerToken, eventId);
+
+    expect(response.status).toBe(200);
+    expect(response.body.clientContacts).toHaveLength(1);
+    expect(response.body.payment.totalEstimatedAmount).toBe(50000);
+    expect(response.body.extras.decoration).toBe(1000);
+    expect(response.body.accommodation.totalCharges).toBe(5900);
+    expect(response.body.sessions[0].venueCost).toBeDefined();
+    expect(response.body.sessions[0].setup).toBeDefined();
+    expect(response.body.sessions[0].items).toHaveLength(2);
+  });
+
+  it('FnBHead sees event name/date(s)/POC/venue/pax/menu — payment/extras/non-food setup genuinely absent from the raw JSON', async () => {
+    const { eventId } = await buildFixtureEvent();
+    const { token } = await seedCaller(Role.FnBHead);
+
+    const response = await getEventAs(token, eventId);
+
+    expect(response.status).toBe(200);
+    // Sees: event name/date(s)/POC/venue/pax/menu (meal timing/food instructions).
+    expect(response.body.eventFamilyType).toBe('Wedding');
+    expect(response.body.clientContacts).toEqual([
+      { name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' },
+    ]);
+    expect(response.body.sessions[0].startDate).toBeDefined();
+    expect(response.body.sessions[0].venue).toBe('Lawn');
+    expect(response.body.sessions[0].pax).toBe(200);
+    expect(response.body.sessions[0].items).toHaveLength(1);
+    expect(response.body.sessions[0].items[0]).toMatchObject({ type: 'Meal', mealName: 'Lunch' });
+    // Does not see: payment, or non-food setup details — genuinely absent
+    // keys, not null/hidden client-side.
+    expect(response.body).not.toHaveProperty('payment');
+    expect(response.body).not.toHaveProperty('extras');
+    expect(response.body).not.toHaveProperty('accommodation');
+    expect(response.body.sessions[0]).not.toHaveProperty('setup');
+    expect(response.body.sessions[0]).not.toHaveProperty('venueCost');
+    expect(response.body.sessions[0].items[0]).not.toHaveProperty('costPerPlate');
+    expect(response.body.sessions[0].items[0]).not.toHaveProperty('totalCost');
+  });
+
+  it('Housekeeping omits payment/menu/item fields, includes setup/rooms — genuinely absent from the raw JSON', async () => {
+    const { eventId } = await buildFixtureEvent();
+    const { token } = await seedCaller(Role.Housekeeping);
+
+    const response = await getEventAs(token, eventId);
+
+    expect(response.status).toBe(200);
+    expect(response.body.sessions[0].venue).toBe('Lawn');
+    expect(response.body.sessions[0].pax).toBe(200);
+    expect(response.body.sessions[0].setup).toMatchObject({ seating: 'Theatre', tableCount: 5 });
+    expect(response.body.accommodation.roomLines[0]).toMatchObject({ roomType: 'Double', noOfRooms: 1 });
+    expect(response.body).not.toHaveProperty('payment');
+    expect(response.body).not.toHaveProperty('extras');
+    expect(response.body).not.toHaveProperty('clientContacts');
+    expect(response.body.sessions[0]).not.toHaveProperty('items');
+    expect(response.body.sessions[0]).not.toHaveProperty('venueCost');
+    expect(response.body.accommodation).not.toHaveProperty('totalCharges');
+    expect(response.body.accommodation.roomLines[0]).not.toHaveProperty('tariff');
+    expect(response.body.accommodation.roomLines[0]).not.toHaveProperty('totalInclGst');
+  });
+
+  it('Reception omits payment/menu fields, includes client names/rooms/check-in-out — genuinely absent from the raw JSON', async () => {
+    const { eventId } = await buildFixtureEvent();
+    const { token } = await seedCaller(Role.Reception);
+
+    const response = await getEventAs(token, eventId);
+
+    expect(response.status).toBe(200);
+    expect(response.body.clientContacts).toEqual([
+      { name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' },
+    ]);
+    expect(response.body.sessions[0].pax).toBe(200);
+    expect(response.body.accommodation.roomLines[0]).toMatchObject({ roomType: 'Double', noOfRooms: 1 });
+    expect(response.body.accommodation).toHaveProperty('checkIn');
+    expect(response.body.accommodation).toHaveProperty('checkOut');
+    expect(response.body).not.toHaveProperty('payment');
+    expect(response.body).not.toHaveProperty('extras');
+    expect(response.body.sessions[0]).not.toHaveProperty('items');
+    expect(response.body.sessions[0]).not.toHaveProperty('setup');
+    expect(response.body.sessions[0]).not.toHaveProperty('venueCost');
+    expect(response.body.accommodation).not.toHaveProperty('totalCharges');
+    expect(response.body.accommodation.roomLines[0]).not.toHaveProperty('tariff');
+  });
+
+  it('venue is genuinely visible to all four roles — this story\'s own edge case', async () => {
+    const { eventId, managerToken } = await buildFixtureEvent();
+
+    for (const role of [Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception]) {
+      const token = await tokenForRole(role, managerToken);
+      const response = await getEventAs(token, eventId);
+      expect(response.body.sessions[0].venue).toBe('Lawn');
+    }
+  });
+
+  it('produces four independently distinct response shapes for the same fixture Event in the same test run', async () => {
+    const { eventId, managerToken } = await buildFixtureEvent();
+
+    const shapes = await Promise.all(
+      [Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception].map(async (role) => {
+        const token = await tokenForRole(role, managerToken);
+        const response = await getEventAs(token, eventId);
+        return JSON.stringify(response.body);
+      }),
+    );
+
+    expect(new Set(shapes).size).toBe(4);
   });
 });
 

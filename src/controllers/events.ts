@@ -27,6 +27,7 @@ import {
   computeTotalOccupancy,
 } from '../services/accommodation.js';
 import { logChange } from '../services/change-log.js';
+import { filterEventForRole } from '../services/event-visibility.js';
 import { computeTotalCost } from '../services/item.js';
 import { computeBalance } from '../services/payment.js';
 import { computeTotalCostSummary } from '../services/quotation.js';
@@ -378,12 +379,21 @@ export const searchEvents: AppRouteQueryImplementation<typeof contract.searchEve
   return { status: 200, body: events.map(toPublicEvent) };
 };
 
-export const getEvent: AppRouteQueryImplementation<typeof contract.getEvent> = async ({ params }) => {
+// STORY-046 — the response is filtered per req.user.role; see
+// src/services/event-visibility.ts for the actual field-visibility rules
+// and their reasoning. EventManager gets toPublicEvent's own output
+// unchanged (filterEventForRole's own early return).
+export const getEvent: AppRouteQueryImplementation<typeof contract.getEvent> = async ({ params, req }) => {
+  if (!req.user) {
+    // Unreachable — authenticatedOnly (router.ts) runs authenticate before
+    // this handler ever does; guarded instead of asserted past.
+    throw new Error('getEvent handler ran without an authenticated user.');
+  }
   const event = await Event.findById(params.id);
   if (!event) {
     return eventNotFound;
   }
-  return { status: 200, body: toPublicEvent(event) };
+  return { status: 200, body: filterEventForRole(toPublicEvent(event), req.user.role) };
 };
 
 interface PendingChange {

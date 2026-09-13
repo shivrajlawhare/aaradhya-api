@@ -381,6 +381,48 @@ export const eventResultSchema = z.object({
   updatedAt: z.date(),
 });
 
+// STORY-046 — a separate schema from eventResultSchema above, used only by
+// GET /events/:id's own response: createEvent/updateEvent/etc. all stay
+// EventManager-only (see router.ts), so eventResultSchema itself stays
+// fully required/unchanged for them. This is the one route whose response
+// shape genuinely varies by req.user.role (src/services/event-visibility.ts
+// does the actual filtering) — every field a role might not see is
+// `.optional()` (Zod accepts the key being entirely absent, not merely
+// `null`), which is what "genuinely omits the field, verify the raw JSON"
+// (this story's own AC) requires. `.extend()` only overrides the specific
+// keys listed; every other field keeps eventResultSchema's own required
+// definition, since the SRS never restricts them by role (id/eventId/
+// eventFamilyType/status/eventManager/documentsChecklist/createdBy/
+// createdAt/updatedAt).
+const filteredRoomLineResultSchema = roomLineResultSchema.extend({
+  tariff: z.number().optional(),
+  totalInclGst: z.number().optional(),
+});
+
+const filteredAccommodationResultSchema = accommodationResultSchema.extend({
+  roomLines: z.array(filteredRoomLineResultSchema),
+  totalCharges: z.number().optional(),
+});
+
+const filteredItemResultSchema = itemResultSchema.extend({
+  costPerPlate: z.number().nullable().optional(),
+  totalCost: z.number().nullable().optional(),
+});
+
+const filteredSessionResultSchema = sessionResultSchema.extend({
+  venueCost: z.number().optional(),
+  setup: sessionSetupResultSchema.optional(),
+  items: z.array(filteredItemResultSchema).optional(),
+});
+
+export const filteredEventResultSchema = eventResultSchema.extend({
+  clientContacts: z.array(clientContactResultSchema).optional(),
+  accommodation: filteredAccommodationResultSchema.optional(),
+  payment: paymentResultSchema.optional(),
+  extras: extrasResultSchema.optional(),
+  sessions: z.array(filteredSessionResultSchema),
+});
+
 // month is 1-indexed (?month=9 means September), matching the story's own
 // query example — z.coerce.number() parses the string every query param
 // arrives as; a non-numeric or out-of-range value fails validation and is
