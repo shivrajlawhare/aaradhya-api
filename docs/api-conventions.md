@@ -424,6 +424,54 @@ request shape, not which credential was wrong.
   null/undefined gap" convention every other rollup in this API already
   follows.
 
+### GET /events/:id/quotation.pdf — SETTLED (STORY-043)
+
+- **`eventManagerOnly`**, unlike `GET /events/:id/quotation-summary`'s own
+  "any authenticated caller" — a deliberate divergence, not an oversight.
+  This story's own AC doesn't name a role restriction; the PDF surfaces the
+  same Payment-Record-adjacent financial detail (Grand Total, bank account
+  number) the SRS restricts to Event Manager visibility elsewhere
+  (§4.4/§3.4), so it's gated the same way.
+- Not a normal JSON route — declared via ts-rest's `c.otherResponse({
+  contentType: 'application/pdf', body: c.type<Buffer>() })`, the first
+  binary/non-JSON response in this contract. The handler returns `{
+  status: 200, body: <Buffer> }` like any other route; ts-rest sets the
+  content-type header and sends the raw bytes.
+- **PDF rendering: `pdfkit`** (pure Node, no headless-browser dependency).
+  `docs/Aaradhya_Tech_Architecture.md`/`docs/Aaradhya_Quotation_PDF_Strategy.md`
+  propose Playwright + S3/R2 persistence, but neither is reflected in the
+  SRS, the story backlog, or `docs/Aaradhya_Collections_and_API.md` — those
+  are open proposals, not settled direction. This story is built to the
+  actual AC/SRS as written: a pure live-render-and-return endpoint, no
+  persistence, matching Assumption A2 exactly (no archived/versioned PDFs).
+  `pdf-parse` (dev-only) extracts text back out for the test suite's own
+  "verified via a PDF text-extraction step" requirement.
+- `Cache-Control: no-store` is set on every response — the AC's own "no
+  caching of a stale render" line, made explicit at the HTTP layer even
+  though nothing here was ever cached server-side to begin with (STORY-041
+  already established that "no stored quotation object" is the mechanism;
+  this header is belt-and-braces for any intermediary cache).
+- The static Terms & Conditions / Documents Required / Bank Account
+  Details footer is the org's real content (supplied directly, not a
+  placeholder), hard-coded as constants in `src/services/quotation-pdf.ts`
+  — identical on every PDF regardless of Event, per this story's own AC.
+  One substitution from the literal supplied text: "Rs." instead of "₹" —
+  pdfkit's default (non-embedded) font has no Indian Rupee glyph and
+  silently corrupts it to the wrong character rather than erroring; no
+  Unicode font is embedded in this repo to render it correctly.
+- Section order matches SRS §4.7 exactly: Client Details → Event Details
+  per Session (session schedule + any Event-type Items, e.g. Muhurta) →
+  Accommodation → F&B per Session (Meal Items only) → Total Cost Summary →
+  static footer.
+- A Cancelled Session is excluded from every per-session section, same
+  reasoning/precedent as `GET /events/:id/quotation-summary`'s own filter —
+  its cost isn't counted in the Total Cost Summary, so showing it as a real
+  scheduled item in the same client-facing document would be inconsistent.
+- A Session with zero Items renders "No Meal Items added yet." rather than
+  a broken/empty table (this story's own edge case); a very long custom
+  venue/menu-item name wraps across lines via pdfkit's own default text
+  wrapping, rather than overflowing the page.
+
 ### POST /events/:id/sessions — SETTLED (STORY-027)
 
 - Gated by `requireRole(Role.EventManager)`, same as the other write routes

@@ -23,14 +23,18 @@
     "express": "^5.2.1",
     "jose": "^6.2.10",
     "mongoose": "^9.9.4",
+    "pdfkit": "^0.20.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.4.0",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pdfkit": "^0.17.6",
     "@types/supertest": "^7.2.1",
     "mongodb-memory-server": "^11.2.0",
+    "pdf-parse": "^2.4.5",
     "supertest": "^7.2.2",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",

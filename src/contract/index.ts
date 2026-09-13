@@ -231,6 +231,23 @@ export const contract = c.router({
     },
     summary: "Get an Event's live Total Cost Summary rollup (any authenticated caller)",
   },
+  // c.otherResponse — this route's body is a raw PDF byte stream, not JSON;
+  // every other route in this contract returns z.object(...)/z.array(...)
+  // (or c.noBody() for a 204). EventManager-only (unlike getQuotationSummary
+  // above): the PDF surfaces the same Payment-Record-adjacent financial
+  // detail (Grand Total, bank account number) the SRS restricts to Event
+  // Manager visibility elsewhere (§4.4/§3.4) — this story's own judgment
+  // call, since its own AC doesn't name a role restriction explicitly.
+  getQuotationPdf: {
+    method: 'GET',
+    path: '/events/:id/quotation.pdf',
+    pathParams: eventIdParamsSchema,
+    responses: {
+      200: c.otherResponse({ contentType: 'application/pdf', body: c.type<Buffer>() }),
+      404: apiErrorSchema,
+    },
+    summary: 'Generate the client-facing Quotation PDF from live Event data (Event Manager only)',
+  },
   createSession: {
     method: 'POST',
     path: '/events/:id/sessions',

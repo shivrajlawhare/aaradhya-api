@@ -30,6 +30,7 @@ import { logChange } from '../services/change-log.js';
 import { computeTotalCost } from '../services/item.js';
 import { computeBalance } from '../services/payment.js';
 import { computeTotalCostSummary } from '../services/quotation.js';
+import { renderQuotationPdf } from '../services/quotation-pdf.js';
 import { computeDurationDays, computeIsMultiDay, computeMonthRange, sessionOverlapsMonth } from '../services/session.js';
 import { isDuplicateKeyError } from '../utils/mongo-errors.js';
 import { escapeRegExp } from '../utils/regex.js';
@@ -852,15 +853,12 @@ export const updateEventExtras: AppRouteMutationImplementation<typeof contract.u
 // isn't actually happening, so its cost shouldn't be charged to the
 // client, consistent with §4.2's framing of Cancelled as "not part of
 // what's scheduled" everywhere else the concept already appears.
-export const getQuotationSummary: AppRouteQueryImplementation<typeof contract.getQuotationSummary> = async ({
-  params,
-}) => {
-  const event = await Event.findById(params.id);
-  if (!event) {
-    return eventNotFound;
-  }
-
-  const summary = computeTotalCostSummary({
+// Shared by getQuotationSummary and getQuotationPdf below — extracted once
+// a second real caller needed the exact same construction (directory-
+// structure.md: "only extract to utils/ once a pattern genuinely repeats";
+// same reasoning applies one level up, to a same-file helper).
+const computeEventQuotationSummary = (event: EventDocument) =>
+  computeTotalCostSummary({
     sessions: event.sessions
       .filter((session) => session.sessionStatus === SessionStatus.Active)
       .map((session) => ({
@@ -871,7 +869,68 @@ export const getQuotationSummary: AppRouteQueryImplementation<typeof contract.ge
     extras: event.extras,
   });
 
-  return { status: 200, body: summary };
+export const getQuotationSummary: AppRouteQueryImplementation<typeof contract.getQuotationSummary> = async ({
+  params,
+}) => {
+  const event = await Event.findById(params.id);
+  if (!event) {
+    return eventNotFound;
+  }
+
+  return { status: 200, body: computeEventQuotationSummary(event) };
+};
+
+// EventManager-only (this story's own judgment call — see the contract's
+// own comment). A Cancelled Session is excluded from every per-session
+// section here, same reasoning/precedent as computeEventQuotationSummary's
+// own filter: its cost isn't counted in the Total Cost Summary, so showing
+// it as a real scheduled item to the client in the same document would be
+// inconsistent.
+export const getQuotationPdf: AppRouteQueryImplementation<typeof contract.getQuotationPdf> = async ({
+  params,
+  res,
+}) => {
+  const event = await Event.findById(params.id);
+  if (!event) {
+    return eventNotFound;
+  }
+
+  const activeSessions = event.sessions.filter((session) => session.sessionStatus === SessionStatus.Active);
+  const pdf = await renderQuotationPdf({
+    eventId: event.eventId,
+    eventFamilyType: event.eventFamilyType,
+    clientContacts: event.clientContacts.map((contact) => ({
+      name: contact.name,
+      contactNumber: contact.contactNumber,
+      role: contact.role,
+    })),
+    sessions: activeSessions.map((session) => ({
+      sessionType: session.sessionType,
+      venue: session.venue,
+      venueCost: session.venueCost,
+      startDate: session.startDate,
+      endDate: session.endDate,
+      // Reuses toPublicItem's own totalCost computation rather than
+      // recomputing pax × cost_per_plate a second time here.
+      items: session.items.map(toPublicItem).map((item) => ({
+        type: item.type,
+        mealName: item.mealName,
+        eventName: item.eventName,
+        pax: item.pax,
+        costPerPlate: item.costPerPlate,
+        totalCost: item.totalCost,
+      })),
+    })),
+    accommodation: toPublicAccommodation(event.accommodation),
+    summary: computeEventQuotationSummary(event),
+  });
+
+  // No caching of a stale render (this story's own AC) — every call is a
+  // fresh render of the Event's current live data, never persisted (SRS
+  // Assumption A2), so nothing here should ever be served from a cache.
+  res.setHeader('Cache-Control', 'no-store');
+
+  return { status: 200, body: pdf };
 };
 
 const invalidSessionDateRange: Extract<CreateSessionResponse, { status: 400 }> = {

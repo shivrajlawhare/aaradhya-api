@@ -10,6 +10,7 @@ import {
   deleteSession,
   getCalendar,
   getEvent,
+  getQuotationPdf,
   getQuotationSummary,
   listEvents,
   searchEvents,
@@ -96,6 +97,10 @@ export const router = server.router(contract, {
   getQuotationSummary: {
     middleware: authenticatedOnly,
     handler: getQuotationSummary,
+  },
+  getQuotationPdf: {
+    middleware: eventManagerOnly,
+    handler: getQuotationPdf,
   },
   createSession: {
     middleware: eventManagerOnly,
