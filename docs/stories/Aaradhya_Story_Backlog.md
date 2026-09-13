@@ -925,6 +925,10 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** Same as STORY-048.
 **Edge cases:** Same as STORY-049/050.
 
+**Decisions (v1) — aaradhya-api side of STORY-051:**
+- **No backend code change needed** — `accommodation` (STORY-050) was already gated to Housekeeping **and** Reception (`filterEventForRole`'s own `canSeeAccommodation`), already carries `checkIn`/`checkOut` (unfiltered — they're dates, not money, so `filteredAccommodationResultSchema` never strips them), and `clientContacts` (STORY-046) was already gated to F&B **and** Reception. Every field this story's AC names was already on the wire for a Reception token before this story started; only new tests were added to prove it explicitly for this role rather than relying on STORY-046/047/050's own generic (not-Reception-specific) coverage.
+- `checkIn`/`checkOut` serialize as full ISO datetime strings (`Date.prototype.toISOString()`), not plain `YYYY-MM-DD` — confirmed by test, since `accommodationResultSchema` types them `z.date()` and nothing in this path truncates to a date-only string before `res.json` serializes it. Worth noting for aaradhya-web's own STORY-051 formatting (it already has a date-truncating helper, `toDateInputValue`, used elsewhere on this same dashboard row's own `date` field).
+
 ### STORY-052: Event Detail tab-visibility gating by role
 **Flow:** A non-Event-Manager role opens an Event Detail screen and sees only their relevant tab(s), pre-filtered; the Event Manager still sees all seven tabs built across this backlog (Overview, Client, Sessions & Menu, Setup, Rooms, Payments, Documents).
 **Acceptance Criteria:**

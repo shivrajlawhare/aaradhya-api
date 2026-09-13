@@ -468,4 +468,69 @@ describe('GET /dashboard', () => {
       expect(response.body.upcomingEvents).toHaveLength(0);
     });
   });
+
+  describe('Reception dashboard visibility (STORY-051)', () => {
+    it('gives Reception Bride/Groom names, rooms, and check-in/out — no payment, no menu column', async () => {
+      const { token: managerToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(
+        managerToken,
+        validPayload(manager.id, {
+          clientContacts: [
+            { name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' },
+            { name: 'Rohan Shah', contactNumber: '9876500000', role: 'Groom' },
+          ],
+        }),
+      );
+      const session = await postSessionAs(
+        managerToken,
+        created.body.id,
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+      );
+      await postItemAs(managerToken, created.body.id, session.body.id, validMealItemPayload());
+      await patchAccommodationAs(managerToken, created.body.id, {
+        checkIn: isoDate(tomorrow),
+        checkOut: isoDate(dayAfterTomorrow),
+        roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }],
+      });
+
+      const { token: receptionToken } = await seedCaller(Role.Reception);
+      const response = await getDashboardAs(receptionToken);
+      const row = response.body.upcomingEvents[0];
+
+      expect(row.clientContacts).toEqual([
+        { name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' },
+        { name: 'Rohan Shah', contactNumber: '9876500000', role: 'Groom' },
+      ]);
+      expect(row.accommodation).toMatchObject({
+        checkIn: tomorrow.toISOString(),
+        checkOut: dayAfterTomorrow.toISOString(),
+        roomLines: [{ roomType: 'Double', occupancy: 2, noOfRooms: 1 }],
+      });
+      expect(row.accommodation).not.toHaveProperty('totalCharges');
+      // No payment column (payment is never on the dashboard row for any
+      // role) and no menu column (`meals` stays F&B-Head-only).
+      expect(row).not.toHaveProperty('payment');
+      expect(row).not.toHaveProperty('meals');
+      expect(row).not.toHaveProperty('setup');
+    });
+
+    it("excludes an Event whose only qualifying Session is Cancelled, for Reception too (STORY-034/047's Active-only rule)", async () => {
+      const { token: managerToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(managerToken, validPayload(manager.id));
+      const session = await postSessionAs(
+        managerToken,
+        created.body.id,
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+      );
+      await patchSessionAs(managerToken, created.body.id, session.body.id, { sessionStatus: 'Cancelled' });
+
+      const { token: receptionToken } = await seedCaller(Role.Reception);
+      const response = await getDashboardAs(receptionToken);
+
+      expect(response.body.counts.upcoming).toBe(0);
+      expect(response.body.upcomingEvents).toHaveLength(0);
+    });
+  });
 });
