@@ -2,6 +2,7 @@ import { initServer } from '@ts-rest/express';
 import { contract } from './contract/index.js';
 import { login } from './controllers/auth.js';
 import { listChangeLog } from './controllers/change-log.js';
+import { getDashboard } from './controllers/dashboard.js';
 import {
   createEvent,
   createItem,
@@ -137,5 +138,9 @@ export const router = server.router(contract, {
   getCalendar: {
     middleware: authenticatedOnly,
     handler: getCalendar,
+  },
+  getDashboard: {
+    middleware: authenticatedOnly,
+    handler: getDashboard,
   },
 });

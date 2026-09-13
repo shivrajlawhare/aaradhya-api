@@ -244,7 +244,10 @@ const toPublicSession = (session: SessionSubdocument) => ({
 // accommodation, STORY-023 for payment, STORY-025 for the checklist, now
 // STORY-029 for sessions). Additive only: every existing consumer of this
 // shape just gets more fields.
-const toPublicEvent = (event: EventDocument) => ({
+// Exported — STORY-047's dashboard controller reuses this directly (the
+// same live Event data, no separate dashboard-specific projection) rather
+// than duplicating the whole toPublicX chain in a second file.
+export const toPublicEvent = (event: EventDocument) => ({
   id: event.id,
   eventId: event.eventId,
   eventFamilyType: event.eventFamilyType,

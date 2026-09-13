@@ -65,7 +65,7 @@ export const updateEventBodySchema = z.object({
   clientContacts: z.array(clientContactInputSchema).min(1).optional(),
 });
 
-const clientContactResultSchema = z.object({
+export const clientContactResultSchema = z.object({
   name: z.string(),
   contactNumber: z.string(),
   role: z.nativeEnum(ClientContactRole),

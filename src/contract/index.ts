@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { apiErrorSchema } from './schemas/common.js';
 import { loginBodySchema, loginResultSchema } from './schemas/auth.js';
 import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/change-log.js';
+import { dashboardResultSchema } from './schemas/dashboard.js';
 import {
   accommodationResultSchema,
   calendarSessionResultSchema,
@@ -348,5 +349,14 @@ export const contract = c.router({
       200: z.array(calendarSessionResultSchema),
     },
     summary: 'Active Sessions overlapping any date within a given month (any authenticated caller)',
+  },
+  getDashboard: {
+    method: 'GET',
+    path: '/dashboard',
+    responses: {
+      200: dashboardResultSchema,
+    },
+    summary:
+      'Role-filtered dashboard aggregate: today/upcoming/tentative/confirmed counts + upcoming-events list (any authenticated caller)',
   },
 });

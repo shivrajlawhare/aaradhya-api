@@ -769,6 +769,46 @@ request shape, not which credential was wrong.
 - Mongoose v9 renamed `FilterQuery` to `QueryFilter` — a real type rename,
   not a typo; worth remembering for any future Mongoose-filter-typed code.
 
+### GET /dashboard — SETTLED (STORY-047)
+
+- `authenticatedOnly`, no role restriction — same precedent as `GET /events`/
+  `GET /events/:id`/`GET /calendar`; this story's own Flow ("Any user opens
+  their dashboard") is unambiguous.
+- **"Today" resolved via `sessionOverlapsRange(session, { from: today, to:
+  today })`** — the exact same function `GET /calendar`/`GET /events/search`
+  already use, just with a single-day range. Since every date in this
+  domain is a UTC-midnight instant representing a whole calendar day, a
+  Session ending exactly at today's midnight passes the `>=` check
+  inclusively — same side of the boundary the calendar already resolved
+  this to.
+- **"Upcoming" is a plain `startDate > today` comparison on an Active
+  Session, not `sessionOverlapsRange` with an open-ended range** — the SRS
+  never defines "upcoming" at all (checked before implementing); reusing
+  the overlap function's own `{from: tomorrow}` shape (no `to` bound)
+  would also match a Session already underway today that merely extends
+  into the future, double-counting it into both the "today" and "upcoming"
+  buckets. The plain comparison keeps them disjoint for the common case.
+- **Cancelled and Completed Events are excluded from "today"/"upcoming"
+  entirely** (both counts and the list) — a judgment call, not spelled out
+  anywhere: a Cancelled Event's stale Active Session shouldn't surface as
+  "happening today." Status-based counts (`tentative`/`confirmed`) are
+  unaffected by this either way.
+- **The upcoming-events list reuses `filterEventForRole` (STORY-046)
+  directly**, not a reimplementation — each row is built from the Event's
+  own `toPublicEvent()` output run through that exact function, then the
+  FR-ROLE-2 columns (`date`/`venue`/`pax`/`status`/`clientContacts`) are
+  read off the *already-filtered* result. `clientContacts` is present/
+  absent per role exactly as STORY-046 already decided (F&B/Reception yes,
+  Housekeeping no) — genuinely absent from the raw JSON, not null.
+- `date`/`venue`/`pax` on each row come from the Event's own **soonest
+  upcoming Session** — an Event with more than one qualifying Session
+  contributes exactly one row, not one per Session.
+- No limit/pagination on the upcoming-events list — nothing asks for one.
+- `toPublicEvent` is now exported from `controllers/events.ts` so
+  `controllers/dashboard.ts` can reuse it directly, rather than
+  duplicating the whole `toPublicEvent`/`toPublicSession`/`toPublicItem`
+  projection chain in a second file.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users
