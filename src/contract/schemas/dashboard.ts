@@ -9,6 +9,23 @@ import { clientContactResultSchema } from './event.js';
 // established — this list reuses that same filtering (STORY-046's own
 // filterEventForRole), so a role that can't see client names never gets
 // this key at all.
+//
+// meals: STORY-049's own "menu/meal-timing information... decide and
+// document" — scoped to the soonest upcoming Session's Meal Items
+// (mealName + start/end time), not each Meal's resolved menuItems dish
+// names. Resolving those would mean joining against the separate
+// MenuItem collection (see event-detail's own menuItemsById lookup) just
+// for a dashboard summary row — out of scope for what this AC actually
+// asks for ("meal-timing information visible", not a full menu). Present
+// only for F&B Head (filterEventForRole's own canSeeMenu gate), same
+// optional/genuinely-absent convention as clientContacts; `[]` (not
+// absent) when F&B Head can see it but the session has no Meal Items yet.
+export const dashboardUpcomingMealResultSchema = z.object({
+  mealName: z.string().nullable(),
+  startTime: z.string().nullable(),
+  endTime: z.string().nullable(),
+});
+
 export const dashboardUpcomingEventResultSchema = z.object({
   id: z.string(),
   eventId: z.string(),
@@ -18,6 +35,7 @@ export const dashboardUpcomingEventResultSchema = z.object({
   venue: z.string(),
   pax: z.number(),
   clientContacts: z.array(clientContactResultSchema).optional(),
+  meals: z.array(dashboardUpcomingMealResultSchema).optional(),
 });
 
 // Counts are identical across roles (this story's own AC) — nothing about

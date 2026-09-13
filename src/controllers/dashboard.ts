@@ -1,6 +1,7 @@
 import type { AppRouteQueryImplementation } from '@ts-rest/express';
 import type { contract } from '../contract/index.js';
 import { Event, EventStatus, SessionStatus, type EventDocument } from '../models/event.js';
+import { Role } from '../models/user.js';
 import { filterEventForRole } from '../services/event-visibility.js';
 import { sessionOverlapsRange } from '../services/session.js';
 import { toPublicEvent } from './events.js';
@@ -89,6 +90,17 @@ export const getDashboard: AppRouteQueryImplementation<typeof contract.getDashbo
 
   const upcomingEvents = upcoming.map(({ event, soonestSession }) => {
     const filtered = filterEventForRole(toPublicEvent(event), role);
+    // filterEventForRole already narrowed this session's own `items` to
+    // Meal-only, money-stripped for F&B Head specifically (`undefined` for
+    // every other role except EventManager, who gets everything
+    // unfiltered — both Meal and Event Items) — found by id since
+    // `filtered.sessions` is the same array, same order, as
+    // `event.sessions`, just each session/item individually filtered.
+    // `meals` itself is gated to F&B Head only, not "whichever role
+    // happens to have an items array" — this is STORY-049's own new
+    // column, deliberately not shown on the Event Manager view (that AC's
+    // own "extra column vs. the Event Manager view" framing).
+    const filteredSession = filtered.sessions.find((session) => session.id === soonestSession._id.toString());
     return {
       id: filtered.id,
       eventId: filtered.eventId,
@@ -98,6 +110,14 @@ export const getDashboard: AppRouteQueryImplementation<typeof contract.getDashbo
       venue: soonestSession.venue,
       pax: soonestSession.pax,
       clientContacts: filtered.clientContacts,
+      meals:
+        role === Role.FnBHead
+          ? (filteredSession?.items ?? []).map((item) => ({
+              mealName: item.mealName,
+              startTime: item.startTime,
+              endTime: item.endTime,
+            }))
+          : undefined,
     };
   });
 

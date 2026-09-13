@@ -68,6 +68,17 @@ const postSessionAs = (token: string, id: string, body: object) =>
 const patchSessionAs = (token: string, id: string, sid: string, body: object) =>
   request(app).patch(`/events/${id}/sessions/${sid}`).set('Authorization', `Bearer ${token}`).send(body);
 
+const postItemAs = (token: string, id: string, sid: string, body: object) =>
+  request(app).post(`/events/${id}/sessions/${sid}/items`).set('Authorization', `Bearer ${token}`).send(body);
+
+const validMealItemPayload = (overrides: Record<string, unknown> = {}) => ({
+  type: 'Meal',
+  mealName: 'Lunch',
+  pax: 100,
+  costPerPlate: 500,
+  ...overrides,
+});
+
 const getDashboardAs = (token: string) => request(app).get('/dashboard').set('Authorization', `Bearer ${token}`);
 
 beforeAll(connectTestDb);
@@ -298,6 +309,72 @@ describe('GET /dashboard', () => {
       );
 
       expect(new Set(counts).size).toBe(1);
+    });
+  });
+
+  describe('F&B Head menu/meal-timing visibility (STORY-049)', () => {
+    it('includes meals (mealName/startTime/endTime) for F&B Head, omits the key entirely for every other role', async () => {
+      const { token: managerToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(managerToken, validPayload(manager.id));
+      const session = await postSessionAs(
+        managerToken,
+        created.body.id,
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+      );
+      await postItemAs(
+        managerToken,
+        created.body.id,
+        session.body.id,
+        validMealItemPayload({ startTime: '12:00', endTime: '14:00' }),
+      );
+
+      const { token: fnbToken } = await seedCaller(Role.FnBHead);
+      const fnbResponse = await getDashboardAs(fnbToken);
+      expect(fnbResponse.body.upcomingEvents[0].meals).toEqual([
+        { mealName: 'Lunch', startTime: '12:00', endTime: '14:00' },
+      ]);
+
+      for (const role of [Role.EventManager, Role.Housekeeping, Role.Reception]) {
+        const token = role === Role.EventManager ? managerToken : (await seedCaller(role)).token;
+        const response = await getDashboardAs(token);
+        expect(response.body.upcomingEvents[0]).not.toHaveProperty('meals');
+      }
+    });
+
+    it('gives F&B Head an empty meals array (not omitted) when the soonest Session has no Meal Items yet', async () => {
+      const { token: managerToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(managerToken, validPayload(manager.id));
+      await postSessionAs(
+        managerToken,
+        created.body.id,
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+      );
+
+      const { token: fnbToken } = await seedCaller(Role.FnBHead);
+      const response = await getDashboardAs(fnbToken);
+
+      expect(response.body.upcomingEvents[0]).toHaveProperty('meals', []);
+    });
+
+    it('excludes an Event whose only qualifying Session is Cancelled, for F&B Head same as every other role (STORY-034/047\'s Active-only rule)', async () => {
+      const { token: managerToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(managerToken, validPayload(manager.id));
+      const session = await postSessionAs(
+        managerToken,
+        created.body.id,
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+      );
+      await postItemAs(managerToken, created.body.id, session.body.id, validMealItemPayload());
+      await patchSessionAs(managerToken, created.body.id, session.body.id, { sessionStatus: 'Cancelled' });
+
+      const { token: fnbToken } = await seedCaller(Role.FnBHead);
+      const response = await getDashboardAs(fnbToken);
+
+      expect(response.body.counts.upcoming).toBe(0);
+      expect(response.body.upcomingEvents).toHaveLength(0);
     });
   });
 });

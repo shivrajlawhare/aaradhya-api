@@ -894,6 +894,13 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** Same as STORY-048.
 **Edge cases:** An event with a Cancelled session that would otherwise have been an F&B Head's only reason to see that event (confirm it's excluded per STORY-034/047's Active-only rule, consistently).
 
+**Decisions (v1) — aaradhya-api side of STORY-049:**
+- `dashboardUpcomingEventResultSchema` gains a new `meals` field — the "menu/meal-timing information... decide and document" bullet has no existing backend shape to reuse (STORY-047's dashboard row never carried anything beyond `date/venue/pax/status/clientContacts`), so this is a genuine backend addition, not just a frontend reuse of an existing field like STORY-049's other two AC bullets (no-payment/no-setup-column are already trivially true — those fields were never on the dashboard row for any role).
+- **Scoped to `{mealName, startTime, endTime}` per Meal Item on the soonest upcoming Session — not each Meal's resolved `menuItems` dish names.** Those ids resolve to actual dish names only via a separate `GET /menu-items` join (see `event-detail`'s own `menuItemsById` lookup on the frontend) — pulling that resolution into a dashboard summary row is a scope well beyond what "meal-timing information visible" asks for literally. If a future story wants the actual dish list on the dashboard, that's a new, explicit AC.
+- `meals` is gated to `role === Role.FnBHead` specifically in the controller, not "whichever role happens to have a filtered `items` array." `filterEventForRole` leaves EventManager's own session `items` completely unfiltered (both Meal and Event Items, per its own "everything, unchanged" rule) — without this explicit gate, EventManager's dashboard row would also carry a `meals` key, contradicting the AC's own framing of this as an F&B-Head-only "extra column vs. the Event Manager view."
+- Present as `[]` (not omitted) when F&B Head can see it but the soonest session has no Meal Items yet — same "role can see the field, but its content is empty" distinction `clientContacts` already draws elsewhere, kept consistent rather than collapsing "no data" and "not allowed to see it" into the same absent-key signal.
+- Cancelled-session exclusion needed no new logic — `isUpcomingSession`'s existing `SessionStatus.Active` check (STORY-047) already applies before any role sees the event at all; added a dedicated test with an F&B Head token to confirm this holds for this role specifically, per the AC's own edge case.
+
 ### STORY-050: Housekeeping Head Dashboard UI
 **Flow:** Same pattern as STORY-049, for the Housekeeping role.
 **Acceptance Criteria:**
