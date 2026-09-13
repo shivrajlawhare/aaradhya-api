@@ -205,7 +205,11 @@ export const createSessionBodySchema = z.object({
   setup: sessionSetupInputSchema.optional(),
 });
 
-const sessionSetupResultSchema = z.object({
+// Exported — STORY-050's dashboard row reuses this directly for
+// Housekeeping's own "setup/seating requirements" column (SRS §3.3), same
+// "reuse the exact filtered shape, don't reinvent it" precedent STORY-047's
+// clientContactResultSchema reuse already set.
+export const sessionSetupResultSchema = z.object({
   seating: z.nativeEnum(SeatingArrangement).nullable(),
   tableCount: z.number(),
   chairCount: z.number(),
@@ -399,7 +403,10 @@ const filteredRoomLineResultSchema = roomLineResultSchema.extend({
   totalInclGst: z.number().optional(),
 });
 
-const filteredAccommodationResultSchema = accommodationResultSchema.extend({
+// Exported — STORY-050/051's dashboard row reuses this directly for
+// Housekeeping/Reception's own "rooms booked"/"check-in/out" column, same
+// reasoning sessionSetupResultSchema's own export comment gives.
+export const filteredAccommodationResultSchema = accommodationResultSchema.extend({
   roomLines: z.array(filteredRoomLineResultSchema),
   totalCharges: z.number().optional(),
 });

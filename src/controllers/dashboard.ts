@@ -118,6 +118,13 @@ export const getDashboard: AppRouteQueryImplementation<typeof contract.getDashbo
               endTime: item.endTime,
             }))
           : undefined,
+      // STORY-050's own new columns — gated the same explicit way `meals`
+      // is: `filtered.setup`/`filtered.accommodation` are unconditionally
+      // present for EventManager (filterEventForRole's own "everything,
+      // unchanged" branch), so relying on the already-filtered value alone
+      // would leak both onto the Event Manager's own dashboard row.
+      setup: role === Role.Housekeeping ? filteredSession?.setup : undefined,
+      accommodation: role === Role.Housekeeping || role === Role.Reception ? filtered.accommodation : undefined,
     };
   });
 

@@ -71,6 +71,9 @@ const patchSessionAs = (token: string, id: string, sid: string, body: object) =>
 const postItemAs = (token: string, id: string, sid: string, body: object) =>
   request(app).post(`/events/${id}/sessions/${sid}/items`).set('Authorization', `Bearer ${token}`).send(body);
 
+const patchAccommodationAs = (token: string, id: string, body: object) =>
+  request(app).patch(`/events/${id}/accommodation`).set('Authorization', `Bearer ${token}`).send(body);
+
 const validMealItemPayload = (overrides: Record<string, unknown> = {}) => ({
   type: 'Meal',
   mealName: 'Lunch',
@@ -372,6 +375,94 @@ describe('GET /dashboard', () => {
 
       const { token: fnbToken } = await seedCaller(Role.FnBHead);
       const response = await getDashboardAs(fnbToken);
+
+      expect(response.body.counts.upcoming).toBe(0);
+      expect(response.body.upcomingEvents).toHaveLength(0);
+    });
+  });
+
+  describe('Housekeeping setup/rooms visibility (STORY-050)', () => {
+    it('includes setup (seating/table/chair) and accommodation (rooms booked) for Housekeeping, omits both keys for F&B and Reception', async () => {
+      const { token: managerToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(managerToken, validPayload(manager.id));
+      await postSessionAs(
+        managerToken,
+        created.body.id,
+        validSessionPayload({
+          startDate: isoDate(tomorrow),
+          endDate: isoDate(tomorrow),
+          setup: { seating: 'Theatre', tableCount: 10, chairCount: 100 },
+        }),
+      );
+      await patchAccommodationAs(managerToken, created.body.id, {
+        roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 3 }],
+      });
+
+      const { token: housekeepingToken } = await seedCaller(Role.Housekeeping);
+      const response = await getDashboardAs(housekeepingToken);
+      expect(response.body.upcomingEvents[0].setup).toMatchObject({
+        seating: 'Theatre',
+        tableCount: 10,
+        chairCount: 100,
+      });
+      expect(response.body.upcomingEvents[0].accommodation.roomLines).toEqual([
+        { roomType: 'Double', occupancy: 2, noOfRooms: 3 },
+      ]);
+      // Money stripped even for a role that can see the accommodation block
+      // at all — same as GET /events/:id (STORY-046).
+      expect(response.body.upcomingEvents[0].accommodation.roomLines[0]).not.toHaveProperty('tariff');
+      expect(response.body.upcomingEvents[0].accommodation).not.toHaveProperty('totalCharges');
+
+      const managerResponse = await getDashboardAs(managerToken);
+      expect(managerResponse.body.upcomingEvents[0]).not.toHaveProperty('setup');
+      expect(managerResponse.body.upcomingEvents[0]).not.toHaveProperty('accommodation');
+
+      const { token: fnbToken } = await seedCaller(Role.FnBHead);
+      const fnbResponse = await getDashboardAs(fnbToken);
+      expect(fnbResponse.body.upcomingEvents[0]).not.toHaveProperty('setup');
+      expect(fnbResponse.body.upcomingEvents[0]).not.toHaveProperty('accommodation');
+    });
+
+    it('gives Reception accommodation (rooms booked) but not setup', async () => {
+      const { token: managerToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(managerToken, validPayload(manager.id));
+      await postSessionAs(
+        managerToken,
+        created.body.id,
+        validSessionPayload({
+          startDate: isoDate(tomorrow),
+          endDate: isoDate(tomorrow),
+          setup: { seating: 'Theatre' },
+        }),
+      );
+      await patchAccommodationAs(managerToken, created.body.id, {
+        roomLines: [{ roomType: 'Single', occupancy: 1, tariff: 2000, noOfRooms: 2 }],
+      });
+
+      const { token: receptionToken } = await seedCaller(Role.Reception);
+      const response = await getDashboardAs(receptionToken);
+
+      expect(response.body.upcomingEvents[0].accommodation.roomLines).toEqual([
+        { roomType: 'Single', occupancy: 1, noOfRooms: 2 },
+      ]);
+      expect(response.body.upcomingEvents[0]).not.toHaveProperty('setup');
+    });
+
+    it('excludes an Event whose only qualifying Session is Cancelled, for Housekeeping too (STORY-034/047\'s Active-only rule)', async () => {
+      const { token: managerToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(managerToken, validPayload(manager.id));
+      const session = await postSessionAs(
+        managerToken,
+        created.body.id,
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+      );
+      await patchSessionAs(managerToken, created.body.id, session.body.id, { sessionStatus: 'Cancelled' });
+
+      const { token: housekeepingToken } = await seedCaller(Role.Housekeeping);
+      const response = await getDashboardAs(housekeepingToken);
 
       expect(response.body.counts.upcoming).toBe(0);
       expect(response.body.upcomingEvents).toHaveLength(0);

@@ -910,6 +910,12 @@ Built early because every write in every later module needs it. Placed here, not
 **Tokens:** Same as STORY-048.
 **Edge cases:** Same boundary/Cancelled-session case as STORY-049, re-verified for this role.
 
+**Decisions (v1) — aaradhya-api side of STORY-050:**
+- Two new dashboard-row fields, both reusing existing shapes rather than inventing new ones (same precedent as STORY-047's `clientContacts` reuse): `setup` reuses `sessionSetupResultSchema` verbatim for the row's soonest upcoming Session (now exported from `event.ts` for this); `accommodation` reuses `filteredAccommodationResultSchema` verbatim, the Event-level rooms-booked detail with money fields already stripped (`tariff`/`totalInclGst`/`totalCharges`), matching SRS §3.3's "seating/setup requirements, hall setup, rooms booked."
+- `accommodation` is gated to Housekeeping **and** Reception (`filterEventForRole`'s own `canSeeAccommodation`), not Housekeeping alone — this directly satisfies STORY-051's own "rooms, check-in/out visible" bullet too, so no further backend change is needed when that story lands.
+- Both fields are gated by an explicit `role ===` check in the controller, the same way `meals` (STORY-049) had to be — `filterEventForRole` leaves `setup`/`accommodation` unconditionally present for EventManager (its own "everything, unchanged" branch), so reading the already-filtered value directly would leak both onto the Event Manager's dashboard row, contradicting this story's own "extra column vs. the Event Manager view" framing.
+- Cancelled-session exclusion needed no new logic (same as STORY-049) — re-verified with a dedicated Housekeeping-token test.
+
 ### STORY-051: Reception Desk Dashboard UI
 **Flow:** Same pattern again, for Reception.
 **Acceptance Criteria:**
