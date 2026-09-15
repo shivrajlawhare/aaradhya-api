@@ -19,6 +19,9 @@ Referenced by short name in each story's **Tokens** line.
 | `text-soft` | `#6F675C` | Secondary text |
 | `text-faint` | `#A79C8C` | Captions, placeholders |
 | `line` | `#E6DAC4` | Hairline borders/dividers |
+| `drawer-bg` | `#333136` (charcoal) | Side drawer / mobile nav dark background |
+| `drawer-text` | `#F5EEE1` (ivory) | Primary text/wordmark on the drawer's dark background |
+| `drawer-text-muted` | `#B4ACA0` | Unselected nav item label/icon on the drawer's dark background |
 | `accent` | `#E4630C` (ember) | Single primary-action color |
 | `accent-deep` | `#B84607` | Accent pressed/dark state |
 | `accent-tint` | `#FBE3D0` | Accent chip/badge fill |
@@ -940,3 +943,319 @@ Built early because every write in every later module needs it. Placed here, not
 **UI:** Tab strip visibility logic on the existing Event Detail shell — no new visual surface, but real behavioral change.
 **Tokens:** N/A (reuses existing tab tokens from STORY-017).
 **Edge cases:** A role navigating directly to a tab URL they shouldn't see (e.g. an F&B Head hitting `/events/:id/payments` directly) — must redirect or 403-render, not just hide the tab button while leaving the route open.
+
+---
+
+# Stories 053+: Mobile-First UI Redesign, Event Creation Flow & Exact-Match Quotation Rebuild
+
+**Source:** `Aaradhya_SRS_v1.1.md` v1.2 (§4.6, §4.7, §5.2, §5.4, §5.8, §6.7–6.9) and the finalized Figma prototype (file "Aaradhya Event Management App" — pages Foundations, Prototype). These stories close every gap between the current build and both: (a) the new Figma screens, and (b) the two reference quotation PDFs (`example_quatation_1.pdf` — Sneha & Nishant wedding; `example_quatation_2.pdf` — Saish Rege wedding), which are treated throughout as literal fixtures, not illustrations. Every quotation-generation story below was written by reproducing both PDFs' numbers by hand first (see SRS §5.4 FR-QUO-9's arithmetic note) — the acceptance criteria encode what actually makes those totals come out right, not an approximation of the layout.
+
+**Build order for this batch:** Navigation shell (053) before every other UI story, since all of them render inside it → Dashboard/Events/Users responsive fixes (054–056) → global input consistency (057) → Calendar (058–060) → Admin/Configuration (061–062, a dependency of the wizard's dropdowns) → New Event wizard (063–068) → Quotation exact-match rebuild (069–075, depends on the wizard producing real data to render). Quotation Snapshot persistence (074) and the fidelity test (075) close the batch.
+
+## Module: UI Redesign — Navigation, Dashboard & Responsive Layout (SRS §6.7–6.9, §5.5)
+
+### STORY-053: Global navigation shell — side drawer (desktop) + full-screen mobile nav
+**Flow:** Every authenticated screen currently renders `DashboardNav` — a plain row of text-styled buttons above the page content, sized the same on every viewport. This story replaces it everywhere with the Figma-finalized navigation shell: a persistent dark side drawer on desktop/laptop widths, and a hamburger-triggered full-screen nav on mobile widths, matching the dark charcoal treatment already locked into the design tokens.
+**Acceptance Criteria:**
+- [ ] A new `AppShell` layout component wraps every authenticated route (Dashboard, Events, Calendar, New Event, User Management, Settings, Event Detail) — replacing each page's standalone `DashboardNav` usage. `DashboardNav` itself is deleted once nothing references it.
+- [ ] At desktop/laptop widths (≥900px, matching MUI's `md` breakpoint), `AppShell` renders a persistent, non-collapsible left rail, 280px wide, filled `drawer-bg`, containing: the Aaradhya logo mark + wordmark (in `drawer-text`) at the top; nav rows for Dashboard, Events, Calendar, New Event, User Management, Settings (role-gated per below); a Logout row pinned to the bottom via a flex spacer.
+- [ ] At mobile widths (<900px), `AppShell` renders a top bar (56px, `surface` background, `line` bottom border) with a hamburger icon (left) and the current screen's title centered — replacing whatever fixed/left-aligned title each page currently renders as an `h1`. Tapping the hamburger opens a full-screen nav view (same row set as the desktop rail, same `drawer-bg` styling) that fully replaces the current screen; a close (×) icon in its header returns to whatever screen opened it (browser/router "go back" semantics, not a hardcoded destination, since the nav is opened from every screen).
+- [ ] Each nav row shows a distinct icon (matching the Figma icon set — a grid glyph for Dashboard, a list glyph for Events, a calendar glyph for Calendar, a calendar-plus glyph for New Event, a people glyph for User Management, a gear glyph for Settings, a door/arrow glyph for Logout) plus a label; the row for the current screen is visually selected — `accent`-tinted background overlay at 18% opacity, `accent`-colored icon and label (Semi Bold), everything else in `drawer-text-muted` (Regular weight).
+- [ ] New Event and User Management rows render only for `Role.EventManager`, matching `EVENT_CREATE_PATH`/`USER_MANAGEMENT_PATH`'s existing `RequireRole` gates in `app.tsx` — every other role sees Dashboard, Events, Calendar, Settings*, and Logout only. (*Settings' own role gate is set in STORY-062, which creates the route; until then this row is Event-Manager-only by the same convention.)
+- [ ] Clicking any nav row navigates via `react-router-dom`'s `Link`/`useNavigate` (no full page reload) to that row's existing route constant; Logout calls the existing `useAuth().logout()` then navigates to `LOGIN_PATH`, replacing history (unchanged behavior from the current `DashboardNav`, just relocated).
+- [ ] Every existing page whose own component previously rendered its `<h1>` title (Dashboard, Events, Calendar, User Management) is updated so the title now appears once — either in the mobile top bar or, on desktop, centered at the top of the page's own content area — never duplicated between `AppShell` and the page.
+**UI:** New `AppShell` component (drawer rail / mobile top bar + full-screen nav), replacing `DashboardNav` on every authenticated screen.
+**Tokens:** `drawer-bg`, `drawer-text`, `drawer-text-muted`, `accent`, `accent-tint` (18% opacity variant, not the flat tint swatch), `surface`, `line`, `type-title-l`.
+**Edge cases:** A role with only Dashboard/Events/Calendar/Logout (F&B Head, Housekeeping, Reception) still gets the full-height drawer/nav with the remaining rows simply absent (not disabled-and-visible) — re-verify this doesn't collapse the drawer's bottom-pinned Logout row upward oddly when fewer rows precede it. The mobile nav's "close" affordance must not strand a user who opened it from a deep route (e.g. mid-wizard) — closing returns to that exact screen, not to Dashboard.
+
+### STORY-054: Dashboard UI fixes — centered title, count-below-label tiles, responsive table
+**Flow:** An Event Manager (or any role) opens the Dashboard. The title reads centered, each count tile shows its number below its label (not beside it), and the upcoming-events table either fits the viewport or scrolls horizontally within its own card rather than clipping columns.
+**Acceptance Criteria:**
+- [ ] The "Dashboard" `<h1>` is center-aligned within its container at every viewport width (desktop: centered over the content column next to the drawer; mobile: centered in `AppShell`'s top bar per STORY-053).
+- [ ] `CountTiles` renders each tile's `labelS` text directly above its `titleL` value in a vertical stack (already the DOM order in `count-tiles.tsx`; this story's job is to verify/fix that no `sx` override anywhere forces a row layout at any breakpoint, since that's the reported bug) — add an explicit regression test asserting the label's bounding box is above the value's bounding box, not beside it.
+- [ ] On mobile, the four count tiles wrap into a 2×2 grid (not a single squeezed row) — `rowStyles`' `flexWrap: 'wrap'` already supports this; verify each tile's `minWidth`/`flex-basis` is tuned so exactly two fit per row at 390px width without text truncation.
+- [ ] `UpcomingEventsTable` is wrapped in a horizontally-scrollable container on mobile (`overflow-x: auto` on the `Paper`, or an inner scroll div) so no column is ever clipped or hidden — all columns the caller's role is entitled to (per STORY-046/049/050/051's field filtering) remain reachable by horizontal swipe, matching the Figma mobile Dashboard mock's scroll-fade affordance.
+- [ ] On desktop/laptop widths the table renders full-width with every column visible without scrolling, unchanged from current behavior.
+**UI:** `dashboard-page.tsx`, `count-tiles.tsx`/`.styles.ts`, `upcoming-events-table.tsx`/`.styles.ts`.
+**Tokens:** `accent-tint` (tile fill), `type-label-s`, `type-title-l`, `space-16`.
+**Edge cases:** Zero upcoming events on mobile — the existing empty-state `Paper` must not itself force horizontal scroll or look truncated. A role whose filtered response has only 3 of the 6 base columns (e.g. Housekeeping, no `clientContacts`) still gets correct horizontal-scroll behavior with fewer columns — the scroll container must not scroll further than its actual (narrower) content width.
+
+### STORY-055: Events List — mobile card redesign
+**Flow:** On mobile, the Events List no longer renders `EventsTable`'s five-column table (which doesn't fit 390px) — it renders one card per Event instead, matching the Figma mobile mock; desktop keeps the existing table unchanged.
+**Acceptance Criteria:**
+- [ ] Below the `md` breakpoint, `EventListPage` renders a new `EventsCardList` component instead of `EventsTable`: one card per Event, each showing family type (Semi Bold, `titleM`-equivalent size) and `StatusChip` on the same top row, the Event ID below in `labelS`/`textSoft`, and a final line combining Bride/Groom names (via the existing `getBrideGroomNames` helper, unchanged) and the assigned Manager separated by " · ".
+- [ ] Each card has the same click/keyboard activation as today's table rows — reuses `createEventRowActivation` unchanged, navigating to `eventDetailPath(event.id)`.
+- [ ] At/above `md`, `EventsTable` renders exactly as it does today — no visual or behavioral change on desktop.
+- [ ] The "+ New Event" action (Event-Manager-only) appears as a full-width primary button above the card list on mobile, and keeps its current placement/style on desktop.
+- [ ] Empty state ("No Events yet") renders correctly in the mobile card layout too, not just the desktop table's `Paper`.
+**UI:** New `EventsCardList` component (mobile only); `event-list-page.tsx` picks between it and `EventsTable` by breakpoint.
+**Tokens:** `surface`, `line`, `type-title-m`, `type-label-s`, `type-body-m`, `status-*` (via `StatusChip`, unchanged).
+**Edge cases:** A very long Bride/Groom name string must not force the card wider than the viewport — wrap or truncate rather than overflow.
+
+### STORY-056: User Management — mobile card redesign
+**Flow:** Same responsive pattern as STORY-055, applied to the User Management table (Name / Role / Status columns), which currently has the same mobile-overflow bug.
+**Acceptance Criteria:**
+- [ ] Below `md`, the User Management list renders one card per user: name (Semi Bold) and status (`Active`/`Inactive`, colored via the existing status-confirmed/text-faint convention already used elsewhere for binary state) on the top row, role name below in `text-soft`.
+- [ ] At/above `md`, the existing table (Name/Role/Status columns) is unchanged.
+- [ ] "+ Add User" renders as a full-width primary button above the mobile card list; unchanged placement on desktop.
+**UI:** New mobile card list for the User Management screen, breakpoint-swapped against the existing table.
+**Tokens:** `surface`, `line`, `type-title-m`, `type-body-m`, `status-confirmed`, `text-faint`.
+**Edge cases:** A deactivated user's card must be visually distinct (muted, per existing "Inactive" convention) in the card layout too, not only in the table.
+
+### STORY-057: Global input consistency — MUI date/time pickers, functional font, focus-loss fix
+**Flow:** Every date field in the app becomes a real MUI Date Picker, every time-of-day field a real MUI (Static) Time Picker in 12-hour AM/PM format, text fields render in the app's functional Inter typeface rather than any decorative face, and the reported "cursor defocuses after every keystroke" bug in the New Event/Quotation forms is fixed at its root.
+**Acceptance Criteria:**
+- [ ] Every native `<input type="date">`/`<input type="time">` (or MUI `TextField` with `type="date"`/`type="time"`) anywhere in the codebase is replaced with `@mui/x-date-pickers`' `DatePicker` (for dates) or `StaticTimePicker` (for times, 12-hour format with an explicit AM/PM control — the always-visible clock face, per SRS §6.9's "MUI (Static) Time/Clock Picker" wording; the popover-only `TimePicker` does not satisfy this story) — grep the codebase for `type="date"` and `type="time"` as the completion check; zero matches remain outside test fixtures.
+- [ ] All text fields (`TextField`, and any custom input built from a plain `<input>`) use `fontFamilyTokens.body` (Inter) exclusively for both the label and the entered value — audit any component that set a different `fontFamily` inline or via `sx`, since `type-display` (Fraunces) must never appear inside an editable field.
+- [ ] The root cause of the per-keystroke focus loss is identified and fixed: this is almost always a component (the input, or an ancestor) being re-created with a new identity on every render — e.g. an inline component defined inside another component's render body, or a `key` prop that changes every render, or a controlled-input value computed from a freshly-allocated object/array each render. Whichever it is, the fix removes the remount, not a workaround (e.g. not `autoFocus` re-applied on every render, which masks the symptom without fixing re-creation).
+- [ ] A regression test types a multi-character string into an affected field (e.g. a Client Contact name field) character-by-character (simulating real typing, not `fireEvent.change` with the full final string in one call) and asserts focus remains on the same input element throughout.
+**UI:** Cross-cutting fix across every form screen (New Event wizard steps, Event Detail's editable tabs, Accommodation, Settings' master-list forms).
+**Tokens:** `type-body-l`/`type-body-m` (field text), N/A for the picker components themselves (MUI-native styling, themed via the existing MUI `theme.ts` palette).
+**Edge cases:** A date field whose value is cleared (no date selected) must show a placeholder, not an invalid/NaN date. A time field's AM/PM toggle must be reachable via keyboard, not mouse-only.
+
+## Module: Calendar — Month View (SRS §5.2, FR-SES-5/6)
+
+### STORY-058: Calendar Month View — desktop (MUI StandaloneMonthView)
+**Flow:** An Event Manager (or any role) opens Calendar on a desktop/laptop viewport and sees a full-width month grid — weekday headers, one box per date, each date's Events listed inside its own box — built with `@mui/x-scheduler`'s `StandaloneMonthView`, not a hand-rolled grid or a week view.
+**Acceptance Criteria:**
+- [ ] `@mui/x-scheduler` is added as a dependency. The Calendar screen imports `SchedulerEvent` from `@mui/x-scheduler/models` and `StandaloneMonthView` from `@mui/x-scheduler/month-view` (the exact import paths the library's own docs use), and renders:
+  ```tsx
+  <StandaloneMonthView
+    events={events}
+    resources={resources}
+    defaultVisibleDate={defaultVisibleDate}
+    onEventsChange={setEvents}
+  />
+  ```
+  where `events` is a `SchedulerEvent[]` mapped from the existing `GET /calendar` response (one `SchedulerEvent` per Event per date it occurs on, per the overlap rule already finalized in SRS §4.2 — a multi-day Session's Event appears in every date cell it spans, exactly as today's chip logic already computes, just re-targeted at the new component's data shape instead of a hand-built chip); `defaultVisibleDate` is the current real-world month on first load, or the month implied by the URL/query state when navigating month-to-month; `onEventsChange` wires `StandaloneMonthView`'s own internal event-state callback back into the page's state (this app has no in-grid drag/resize editing of Events, so in practice this callback only needs to keep local state in sync with what the library renders, not persist anything — Event data is still only ever mutated through the Event Detail/wizard screens).
+- [ ] **`resources` maps to the four Event `status` values**, not to Venue or Event Manager: one resource per status (Tentative/Confirmed/Completed/Cancelled), each carrying that status's existing color token (`status-tentative`/`status-confirmed`/`status-completed`/`status-cancelled`) as its resource color, and each `SchedulerEvent`'s `resourceId` set to that Event's current `status`. This uses the library's native resource-coloring feature to reproduce the by-status coloring already used everywhere else in the app (`StatusChip`, calendar chips) rather than fighting the library's own coloring model with a manual override.
+- [ ] The grid spans the full available width of its container with minimal side margins (regression check against the "too much margin" bug this story exists to fix) — no fixed max-width wrapping it on desktop.
+- [ ] Each date cell shows the date number top-right (bold when it's the current real-world date, muted for cells belonging to the adjacent month) and, below it, one row per Event on that date formatted as a small color dot (colored by its resource/status, per the mapping above) + start time + Event label, truncating with an ellipsis (not wrapping or overflowing the cell) when too long to fit on one line.
+- [ ] An Event whose Session spans more than one date within the same displayed week renders as a single highlighted bar across those date cells (not a repeated per-cell dot+text row) — reproducing `StandaloneMonthView`'s own multi-day rendering, fed by the Session's real `start_date`/`end_date` range.
+- [ ] Clicking a date cell's Event row (dot+text or bar) navigates to that Event's Detail page via `eventDetailPath`.
+- [ ] Month navigation (previous/next month chevrons, already present as `ChevronLeftIcon`/`ChevronRightIcon` imports on the existing Calendar page) re-queries `GET /calendar` for the newly-selected month's date range.
+**UI:** Calendar screen rebuilt around `StandaloneMonthView`; the app's own light theme tokens are applied to it (not the library's own default/dark demo styling) via its theming props, so it matches the rest of the app rather than forking the visual language for one screen.
+**Tokens:** `surface`, `surface-2` (weekday header row fill), `line` (grid lines), `text`, `text-soft`, `text-faint` (adjacent-month dates), `status-*` (event dots/bars), `type-label-s` (weekday headers).
+**Edge cases:** A date with more Events than fit in its cell needs a "+N more" affordance (matching `StandaloneMonthView`'s own overflow behavior) rather than growing the cell or clipping silently. A month with a Session spanning a week boundary renders that Session's bar as two separate segments (one per week row), not one bar breaking across rows.
+
+### STORY-059: Calendar Month View — mobile (full-screen, not a compact widget)
+**Flow:** On mobile, Calendar renders the same full month grid as desktop — not a shrunken widget with a separate agenda list below it. Cells are narrower but keep the same date-number-top-right + dot/truncated-title-per-event structure, scaled down.
+**Acceptance Criteria:**
+- [ ] Below `md`, the Calendar screen renders the same `StandaloneMonthView` grid (not an alternate compact/agenda component) sized to the mobile viewport's full width and as much height as the viewport allows below the top bar and filter row — this explicitly supersedes any earlier "small calendar + agenda list" pattern; there is exactly one calendar-rendering component shared by both breakpoints, only its container sizing differs.
+- [ ] Each date cell shows the date number and up to 2 events as dot + truncated title (time omitted at this width if it doesn't fit — title truncation via ellipsis takes priority over showing the time); a "+N more" affordance appears when a date has more events than fit.
+- [ ] Weekday headers use single-letter abbreviations at this width (S/M/T/W/T/F/S) rather than the desktop's three-letter form, to keep columns legible at ~50px each.
+- [ ] Tapping a date cell's event navigates to that Event's Detail page, same as desktop.
+- [ ] Month navigation chevrons and the filter row (STORY-060) sit above the grid, both reachable without scrolling past the grid itself.
+**UI:** Shared `StandaloneMonthView`-based Calendar component from STORY-058, mobile container sizing only.
+**Tokens:** Same set as STORY-058, applied at mobile-appropriate font sizes.
+**Edge cases:** A date cell too narrow to show even a truncated title alongside its dot — fall back to dot-only with the count of events, still tappable to see them (e.g. via the "+N more" surface, or by opening that date's Event Detail directly when there's exactly one).
+
+### STORY-060: Calendar dropdown filters (Venue, Event, Manager, Event Type, Status)
+**Flow:** Above the month grid (both breakpoints), a row of dropdown filters narrows which Events' dots/bars render, without changing which dates are shown.
+**Acceptance Criteria:**
+- [ ] Five filters render: Status (All/Tentative/Confirmed — the existing filter set, unchanged), Venue (populated from the Venue Master list, STORY-061), Event (a search-by-event selector — typing filters a list of matching Events by name/ID/client, selecting one highlights just that Event's cells; see Decision note below on this filter's meaning), Event Manager (populated from active `EventManager`-role User Accounts), Event Type (populated from the Event Type Master list, STORY-061).
+- [ ] Filters combine with AND semantics — selecting a Venue and a Status together shows only Events matching both.
+- [ ] On mobile, filters render as a horizontally-scrollable chip row (matching the Figma mock) rather than wrapping to multiple lines.
+- [ ] Clearing a filter (selecting its "All" option) removes that constraint without resetting the others.
+- [ ] Filtering is client-side against the already-fetched month's Events (no additional network round-trip per filter change), consistent with the existing calendar data-loading pattern.
+**UI:** New filter row above the Calendar grid, both breakpoints.
+**Tokens:** `surface`, `line`, `text`, `text-soft` (chevron icons).
+**Edge cases:** The "Event" filter combined with a date navigation to a month where the selected Event doesn't occur — the filter selection persists (doesn't silently reset) even though it currently matches nothing, so navigating back to the right month re-shows the highlight.
+**Note:** SRS Assumption A10 flags that "Event" filter's exact meaning as unconfirmed — this story implements it as a search-by-Event selector (name/ID/client) per that assumption's stated interpretation; confirm with stakeholders before or during implementation that this, and not a duplicate of Event Type, is what's wanted.
+
+## Module: Admin / Configuration Settings (SRS §5.8, §4.6)
+
+### STORY-061: Venue, Event Type, and Room Type master-list schemas and endpoints
+**Flow:** No end-user-visible flow yet — this defines the three master lists the Settings screen (STORY-062) and every venue/event-type/room-type dropdown across the app (Session entry, Room Line entry) will read from and write to.
+**Acceptance Criteria:**
+- [ ] Three new collections/schemas: `venues` (`name`, `defaultVenueCost`, `active`), `eventTypes` (`name`, `active`), `roomTypes` (`name`, `defaultTariff`, `active`) — each with `active` defaulting to `true`.
+- [ ] `GET /venues`, `GET /event-types`, `GET /room-types` — list all entries (both active and inactive; the caller decides whether to filter, e.g. a dropdown shows only `active` ones while the Settings screen shows all).
+- [ ] `POST /venues`, `POST /event-types`, `POST /room-types` — create a new entry; `POST /venues` and `POST /room-types` require their respective default-cost field, `POST /event-types` requires only `name`.
+- [ ] `PATCH /venues/:id`, `PATCH /event-types/:id`, `PATCH /room-types/:id` — edit name/default cost, or toggle `active`.
+- [ ] Deactivating an entry (`active: false`) never deletes it and never cascades to any Event/Session/Room Line already referencing its name — those keep displaying whatever value they already captured (Venue/Room Type selection copies the name and current default cost at selection time onto the Session/Room Line, per SRS FR-CFG-4; it does not store a live reference to the master-list document).
+- [ ] All six write endpoints (`POST`/`PATCH` × 3) are `eventManagerOnly`, matching SRS FR-CFG-6; the three `GET` endpoints are `authenticatedOnly` (every role's dropdowns need to read them, even though only Event Manager can edit them).
+- [ ] Seed data: pre-populate `venues` with the four venues named across both reference quotations (Poolside 60000, Half Banquet 60000, Full Banquet 120000, and a reasonable default for any others already in use) and `roomTypes` with Deluxe/Executive/Dormitory/Extra Beds at the tariffs seen in `example_quatation_1.pdf` (2500/3500/5000/700), so the wizard and Settings screen have real data on first run rather than an empty state.
+**UI:** None (backend only).
+**Tokens:** N/A (backend only).
+**Edge cases:** Creating a venue/room-type/event-type with a name that already exists (including a deactivated one) — decide and document whether this is rejected as a duplicate or allowed (two "Poolside" entries, one active one not); recommended: reject case-insensitive duplicates among currently-`active` entries only, so a deactivated name can be reintroduced.
+
+### STORY-062: Settings screen UI — Venue / Event Type / Room Type / Menu Item management
+**Flow:** An Event Manager opens Settings from the nav shell (STORY-053) and manages the four master lists (the three new ones from STORY-061, plus the existing Menu Item list) from one tabbed screen.
+**Acceptance Criteria:**
+- [ ] The Settings route (`/settings`, `eventManagerOnly` via `RequireRole`, matching the New Event/User Management convention) renders inside `AppShell`; its own nav row (STORY-053) only appears for Event Manager.
+- [ ] Desktop: a left-hand section list (Venues / Event Types / Room Types / Menu Items) beside a right-hand panel showing the selected list as a table (Name, Default Cost where applicable, Status) with a "+ Add" button per section.
+- [ ] Mobile: the section list renders as a horizontally-scrollable chip row above a card list (one card per entry: name + default cost + status), matching STORY-055/056's card pattern.
+- [ ] "+ Add" opens a small form (name, and default cost for Venues/Room Types) that calls the matching `POST` endpoint from STORY-061 and appends the new row to the list on success without a full reload.
+- [ ] Each row has an Edit action (inline or a small dialog) that calls the matching `PATCH` endpoint, and a Deactivate/Reactivate toggle reflecting and updating `active`.
+- [ ] The Menu Item section reuses the existing add-Menu-Item capability already present in Item entry (STORY-in-Sessions-and-Menu, wherever that currently lives) — this screen becomes a second, browsable entry point onto the same underlying Menu Item list, not a separate/duplicate data store.
+**UI:** New Settings screen — desktop split-panel, mobile chip-row + cards.
+**Tokens:** `surface`, `surface-2`, `line`, `accent`, `accent-tint`, `status-confirmed` (Active label), `text-faint` (Inactive label), `type-title-l`/`-m`.
+**Edge cases:** Deactivating the Venue/Room Type currently selected mid-entry in an open New Event wizard session elsewhere — that in-progress selection is unaffected (per STORY-061's "copy at selection time, not a live reference" decision), so this is a non-issue by construction; call this out in a test rather than leaving it as an assumption.
+
+## Module: New Event Creation Flow (SRS §5.1, §5.2, §4.3, §4.7 data-entry sequence)
+
+### STORY-063: New Event wizard shell — stepper, routing, cross-step state
+**Flow:** An Event Manager clicks "New Event" and lands on a 5-step wizard (Client Details → Event Details → Accommodation → Sessions & Items → Review & Quotation) whose step order is fixed to exactly the sequence the Quotation itself renders in (SRS §4.7's governing principle), replacing whatever single-page `event-creation-form.tsx` currently does.
+**Acceptance Criteria:**
+- [ ] A new route family under `EVENT_CREATE_PATH` (e.g. `/events/new/client-details`, `/events/new/event-details`, `/events/new/accommodation`, `/events/new/sessions-items`, `/events/new/review`) — deep-linking to any step directly is allowed (no forced replay of earlier steps) but each step's own validation still applies before its own "Next" enables.
+- [ ] A stepper component renders across every step: five numbered pills (Client Details / Event Details / Accommodation / Sessions & Items / Review & Quotation), the current step filled `accent`, completed steps filled `accent-tint` with `accent-deep` text, remaining steps outlined only.
+- [ ] Wizard state (everything entered across all steps) lives in one client-side store (e.g. a dedicated Zustand/context store, matching whatever state pattern `stores/` already uses elsewhere in the codebase) for the duration of the wizard, persisted to `sessionStorage` so a reload mid-wizard doesn't lose entered data — cleared on successful submission (STORY-068) or explicit cancel.
+- [ ] "Next"/"Back" footer buttons appear on every step (Step 1 has no Back; Step 5's "Next" is instead "Generate Quotation," STORY-068); Back never discards already-entered data on the step being left.
+- [ ] On mobile, the five-step stepper condenses to a compact "Step N of 5 — <Step Name>" label plus a thin progress bar, matching the Figma mobile mock, rather than showing all five pills at once (they don't fit at 390px).
+**UI:** New wizard shell (stepper + step-routing outlet), replacing the single-page New Event form.
+**Tokens:** `accent`, `accent-tint`, `accent-deep`, `line`, `type-label-s`/`-m`.
+**Edge cases:** Navigating away from the wizard mid-entry (e.g. clicking a nav-shell link) — prompt before discarding unsaved wizard state, or persist it (per the `sessionStorage` requirement above) so returning to `/events/new/...` later resumes rather than restarting blank.
+
+### STORY-064: Wizard Step 1 — Client Details
+**Flow:** The first wizard screen collects Client Contacts — the same three default rows (Bride, Groom, Point of Contact) as today's Event creation, with the ability to add/remove custom rows, per SRS FR-EVT-2.
+**Acceptance Criteria:**
+- [ ] Three default rows render pre-labeled Bride / Groom / Point of Contact, each with a Name field and a Contact Number field; both fields are optional at this step (per `example_quatation_2.pdf`, where Bride/Groom are legitimately left blank on a real quotation) — nothing here blocks "Next" for an empty field.
+- [ ] "+ Add Contact" appends a new row with an editable role-label field (free text, not restricted to the three defaults) plus Name and Contact Number; each added row has a remove (×) affordance the three default rows don't need (they're always present, per FR-EVT-2's "default rows Bride, Groom, POC").
+- [ ] Data entered here is held in the wizard store (STORY-063), not submitted to the backend until Step 5 (SRS FR-EVT-8 — there is exactly one data-entry flow, no partial per-step submission creating a half-formed Event record).
+- [ ] "Next: Event Details →" always enables (no required fields on this step) and advances to Step 2, carrying the entered contacts forward in wizard state.
+**UI:** Step 1 screen — one card containing the three default rows + any added rows + "Add Contact", inside the wizard shell.
+**Tokens:** `surface`, `line`, `type-title-m` (card heading), `type-body-m` (field labels).
+**Edge cases:** Adding a contact row, filling it in, then removing it — the wizard store must actually drop that row's data, not just hide it (verify by navigating to Step 5's review and confirming a removed row never appears).
+
+### STORY-065: Wizard Step 2 — Event Details (Session entry)
+**Flow:** The second wizard screen adds one or more Sessions (Engagement, Wedding, Halad, etc.) — event type, venue, date/time range, and guest count — building the exact rows that become the Quotation's "Event Details" overview table (SRS §4.7d).
+**Acceptance Criteria:**
+- [ ] A form collects, per Session: Event Type (dropdown sourced from the Event Type Master, STORY-061, plus a free-text custom option), Venue (dropdown sourced from the Venue Master, STORY-061; selecting one auto-fills Venue Cost from that venue's `defaultVenueCost`, remaining independently editable — SRS FR-CFG-4), Venue Cost (numeric, auto-filled/editable per above), Pax (numeric), Start Date and End Date (MUI `DatePicker`, `end_date >= start_date` enforced — a single-day Session is simply `start_date === end_date`, SRS §4.2), Start Time and End Time (MUI `StaticTimePicker` from `@mui/x-date-pickers`, 12-hour AM/PM — the always-visible clock face, not the popover-triggered `TimePicker`, per SRS §6.9's "MUI (Static) Time/Clock Picker" requirement).
+- [ ] "+ Add Event" appends the filled form's values as a new row in a table below (Event Type / Date / Duration / Guests / Venue / Cost — the same six columns the Quotation's Event Details table uses, SRS §4.7d), then clears the form for the next entry; multiple Sessions (including more than one on the same date, per `example_quatation_2.pdf`'s Halad+Engagement both on 26 Feb) are fully supported.
+- [ ] Duration displays in the added-rows table formatted exactly as the Quotation will show it (e.g. "6pm to 10pm"), derived from the entered start/end times — this formatting function is written once and reused verbatim by the Quotation renderer (STORY-069), not reimplemented twice.
+- [ ] Each added row has a remove affordance; removing a Session here also removes any Sessions & Items (Step 4) already entered against that Session's date, with a confirmation prompt if any exist.
+- [ ] "Next: Accommodation →" requires at least one Session added; "← Back" returns to Step 1 without losing Step 2's own entered rows.
+**UI:** Step 2 screen — entry form + added-Sessions table, inside the wizard shell.
+**Tokens:** `surface`, `line`, `type-title-m`, `type-body-m`, `type-label-s` (table headers).
+**Edge cases:** Two Sessions on the same date with different venues (per `example_quatation_2.pdf`'s Poolside/Half Banquet Engagement) — both must carry through distinctly into Step 4's per-date grouping and into the Quotation's per-date venue rows (SRS FR-QUO-9's "one venue row per Session on that date, not one per date").
+
+### STORY-066: Wizard Step 3 — Accommodation
+**Flow:** The third wizard screen enters the single Accommodation Block for the whole Event (SRS §4.3 — one block per Event, not per Session): check-in/check-out and one or more Room Lines.
+**Acceptance Criteria:**
+- [ ] Check-in and Check-out are MUI `DatePicker` + `StaticTimePicker` pairs (the always-visible clock face, not the popover `TimePicker` — SRS §6.9) matching the reference quotations' "10-12-2026 / 12pm" two-line display; `total_days` is derived and displayed read-only, never manually entered.
+- [ ] Room Lines: Room Type (dropdown sourced from the Room Type Master, STORY-061; selecting one auto-fills Tariff from `defaultTariff`, remaining editable), Occupancy, Tariff, Number of Rooms, and a derived read-only Total (incl. GST) per line, computed the same way the existing Accommodation total-computation already does (FR-EVT-3 — never manually enterable).
+- [ ] An **Extra Beds room line is present by default and cannot be removed** (it may be left at zero occupancy/rooms/tariff-times-zero) — matching SRS §4.3's note that both reference quotations always print this row even at zero, so the data model must always carry it rather than the UI conditionally offering to add it.
+- [ ] "+ Add Room Line" adds further custom room lines beyond the seeded defaults (Deluxe/Executive/Dormitory/Extra Beds); each non-Extra-Beds line has a remove affordance.
+- [ ] A footer row shows Total Occupancy (summed) and Total Charges (summed), read-only, styled with the green/yellow shading called out in SRS §4.7e — this exact coloring carries through unchanged to the Quotation's own Accommodation table (STORY-070), so it's introduced here rather than invented twice.
+- [ ] "Next: Sessions & Items →" requires Check-in and Check-out to be set; room lines may all be zero (an Event with no accommodation booked is valid — not every booking needs rooms).
+**UI:** Step 3 screen — check-in/out fields + Room Line rows + totals footer, inside the wizard shell.
+**Tokens:** `surface`, `line`, `type-title-m`, `type-body-m`, plus the green/`status-confirmed`-family and yellow/`accent-tint`-family shades for the totals footer (reuse existing tokens rather than introducing new raw hex values — confirm the closest existing token match during implementation, e.g. a green success tone if one exists elsewhere in the palette, else flag for a token addition).
+**Edge cases:** Check-out before check-in — block with a validation message rather than producing a negative `total_days`. Editing Check-in/Check-out after Room Lines are already entered must recompute `total_days` live without requiring the user to re-enter room data.
+
+### STORY-067: Wizard Step 4 — Sessions & Items (Ceremony/Food-Dining split, L.S. toggle)
+**Flow:** The fourth wizard screen is where the per-date Ceremony Events and Food/Dining Events are entered — the data that becomes the Quotation's per-date Event Details tables (SRS §4.7f) verbatim. This is the most novel screen in the flow and the one most directly load-bearing for exact-match quotation output.
+**Acceptance Criteria:**
+- [ ] A row of date tabs, one per distinct date across every Session entered in Step 2 (e.g. two tabs for a two-day wedding, three tabs if a Halad/Engagement/Wedding span three distinct dates) — selecting a tab shows only that date's entry form and already-added items.
+- [ ] Each date tab shows a read-only reminder line naming that date's Session(s) and venue(s) (e.g. "Venue for this date: Poolside · 60,000/- (from Event Details)"), pulled from Step 2's data, never re-entered here.
+- [ ] **Ceremony Events section:** a form with Event Name (dropdown + custom, matching SRS §4.2's `session_type`-style prefilled-plus-custom convention) and Start/End Time (MUI `StaticTimePicker`, the always-visible clock face — SRS §6.9); "+ Add Ceremony Event" appends a row to a list below. No Pax/Cost/Menu fields exist here at all — matching the Event Item's actual field set (SRS §4.5), not merely hidden.
+- [ ] **Food/Dining Events section:** a form with Meal Name (dropdown + custom), Start/End Time (MUI `StaticTimePicker`, same as above), Pax (numeric), an **L.S. (lump sum) toggle**, Cost per Plate — relabeled live to "Flat Cost" when the L.S. toggle is on — and a Menu field (searchable multi-select against the existing Menu Item master list, with an "add new" option that persists the new Menu Item for future reuse, per SRS FR-SES-3). "+ Add Food/Dining Event" appends a row.
+- [ ] Toggling L.S. on a given row updates a live preview line under that row reading "Shown on Quotation as: L.S. (Npax)" (N = the entered Pax) when on, or "Shown on Quotation as: N" when off — this is not cosmetic flavor text, it is the literal rule the Quotation renderer applies (SRS §4.5/Glossary's Limited Seating entry, FR-QUO-8), surfaced here so the person entering data can see exactly what will print before generating anything.
+- [ ] Each added Ceremony or Food/Dining row has a remove affordance and can be re-edited (clicking a row re-populates the form above it for editing rather than only supporting append/delete).
+- [ ] "Next: Review & Quotation →" requires nothing further to be added (a date with zero Ceremony/Food-Dining rows is valid — not every date needs both categories) but does require every date tab to have been visited at least once (tracked in wizard state) so a user doesn't accidentally skip a whole date's entry unnoticed.
+**UI:** Step 4 screen — date tabs + Ceremony section + Food/Dining section, each with its own add-row form and list, inside the wizard shell.
+**Tokens:** `surface`, `surface-2` (row card fill), `line`, `accent` (L.S. toggle "on" state and its label color), `text-faint` (L.S. toggle "off" label color), `type-title-m`, `type-body-m`, `type-label-s` (mini field labels).
+**Edge cases:** An L.S. row's Pax value changing after the toggle is already on — the preview line updates live to reflect the new N. A Ceremony Event added with every field left blank is allowed to persist (SRS §4.7f's "an Event Item with every field blank still renders as a bare grey divider row… a valid, not an erroneous, state") — do not add validation that blocks this, since both reference quotations contain exactly this case.
+
+### STORY-068: Wizard Step 5 — Review & Generate Quotation
+**Flow:** The final wizard screen shows a read-only Total Cost Summary computed live from every prior step's data (SRS §5.4 FR-QUO-9, exactly as it will appear on the generated PDF), lets the Event Manager add manual line items (Decoration, Photographer, Bhatji, etc.) with optional notes, then submits the whole Event in one call and immediately offers the generated Quotation.
+**Acceptance Criteria:**
+- [ ] The Total Cost Summary renders using the exact structure finalized in SRS FR-QUO-9: one merged block per date (venue row(s) + food rows), a single aggregate Food Cost row (Total Cost = sum of every food row's Total Cost across every date; Total Cost with GST = that sum × (1 + GST%), GST% defaulting to 5% and editable here since SRS §4.9 allows it to vary per-quotation), an Accommodation row (pulled from Step 3's computed `total_charges`), zero or more manual rows, and a Grand Total row summing every "Total Cost with GST" value above it — this is a live preview, not yet a persisted or rendered PDF.
+- [ ] "+ Add Line Item" lets the Event Manager add any number of arbitrarily-named rows (Decoration, Photographer, Bhatji, or anything else), each with a name, an **optional short note** (rendered in the Sub Cost Item column — e.g. "poolside engagement sangeet + wedding mandap decor"), and a Total Cost with GST amount — per SRS FR-QUO-9a, since both reference quotations carry exactly this kind of note and it is not optional polish for an exact-match rebuild.
+- [ ] "Generate Quotation" submits the entire wizard's accumulated state as one `POST /events` call (creating the Event, its Sessions, Items, Accommodation, and Client Contacts together — FR-EVT-8's "exactly one data-entry flow," never a sequence of partial per-step writes), then immediately calls `GET /events/:id/quotation.pdf` (or triggers whatever the existing Generate-Quotation action does today) and navigates to the Quotation Preview screen for the newly-created Event.
+- [ ] On successful submission, the wizard's `sessionStorage` state (STORY-063) is cleared.
+- [ ] A submission failure (network error, validation rejection) keeps the user on this step with their data intact and shows a clear error, rather than silently losing the wizard's accumulated state.
+**UI:** Step 5 screen — live Total Cost Summary + "Add Line Item" affordance + "Generate Quotation" primary action, inside the wizard shell.
+**Tokens:** `surface`, `surface-2`, `line`, `accent-tint` (Food Cost / Grand Total row shading), `type-title-m`, `type-body-m`.
+**Edge cases:** Adding a manual line item, then going Back to Step 4 and adding another Food/Dining Event, then returning to Step 5 — the live summary recomputes to include the new item without the manually-added rows being lost or duplicated.
+
+## Module: Quotation Generation — Exact-Match Rebuild (SRS §4.7, §5.4)
+
+**Governing constraint for every story in this module:** `example_quatation_1.pdf` and `example_quatation_2.pdf` are the acceptance fixtures. Every number named in an Acceptance Criterion below was independently recomputed from those two PDFs (not eyeballed) before being written down — see SRS FR-QUO-9's arithmetic note for the worked Food-Cost/GST/Grand-Total derivation. Where the two reference PDFs disagree on a formatting detail (see STORY-071's dash-format note), the story picks one convention and applies it consistently rather than reproducing the inconsistency.
+
+### STORY-069: Quotation header, title row, Client Details & Event Details tables
+**Flow:** The top of every generated Quotation PDF, from the letterhead through the Event Details overview table — the first thing anyone sees when a Quotation is opened.
+**Acceptance Criteria:**
+- [ ] Header: the Aaradhya logo mark and wordmark render left-aligned (two image assets placed side by side, per SRS §4.7a — real brand asset files, not the placeholder circle+sparkle used in the Figma mock, must be sourced/uploaded before this story ships); GST number, address (two lines), and contact number render right-aligned in a smaller regular weight; one horizontal rule spans the full page width directly below this header block, before the title row.
+- [ ] Title row: "Event Quotation" centered, bold, using the same size/weight as both reference PDFs (visually matched against the fixtures, not an arbitrary guess); "Quotation Date: DD/MM/YYYY" bold, right-aligned on the same row, always the current server date at generation time — never user-editable, never the Event's `created_at` (SRS FR-QUO-6).
+- [ ] Client Details table: heading styled in the same accent/italic-ish blue used for every section heading across both reference PDFs (a distinct heading style from body text, applied consistently to every subsequent section heading in this module); table with an unlabeled first column, "Name", "Contact Number"; exactly the rows present in `client_contacts[]` in entry order (Bride/Groom/POC defaults plus any custom rows) — a contact with a blank name and/or contact number (per `example_quatation_2.pdf`'s blank Bride/Groom) renders as an empty cell, not an omitted row.
+- [ ] Event Details table: heading same style as above; columns "Event Type", "Event Date", "Event Duration", "No. Of Guests", "Venue Selected", "Selected Venue Cost"; one row per Session in entry order; Event Date formatted `DD/MM/YYYY` (standardizing on `example_quatation_1.pdf`'s format rather than `example_quatation_2.pdf`'s "26 Feb 2027" — pick one and apply it to every generated Quotation, since the two source PDFs are inconsistent with each other and the system must not be); Duration formatted `<start> to <end>` using lowercase `am`/`pm` with no space before them (`6pm to 10pm`, `9am to 3pm`) — this exact string format, produced by the same formatter Step 2 of the wizard (STORY-065) already uses for its own added-rows table, not a second implementation; Venue Cost formatted `X,XX,XXX/-` (Indian digit grouping, trailing `/-`, no currency symbol).
+- [ ] Two or more Sessions on the same date (per `example_quatation_2.pdf`'s Halad+Engagement) render as two separate Event Details rows, each with its own full column set — never merged into one row.
+**UI:** Quotation PDF rendering component (the same React component tree used for both the on-screen Quotation Preview and the server-side Playwright PDF render, per `Aaradhya_Quotation_PDF_Strategy.md` §4 — one template, not two).
+**Tokens:** N/A — the Quotation's own typography/color is a fixed reproduction of the reference PDFs' letterhead styling, not the app's interactive-UI token set; treat font choices here as a separate, explicit design decision to be pinned once (e.g. against the reference PDFs' apparent serif/sans mix) rather than left to reuse whatever the surrounding app theme happens to be.
+**Edge cases:** An Event with only one Session still renders the Event Details table with exactly one row and full-width column headers (not a degenerate single-column layout). A Client Contact row where only the Contact Number is filled and Name is blank (the inverse of the reference PDFs' pattern) must still render correctly — don't assume Name is always the one left blank.
+
+### STORY-070: Quotation Accommodation Details table (Extra Beds row, color-coded totals)
+**Flow:** The Accommodation Details section of the Quotation, immediately following Event Details.
+**Acceptance Criteria:**
+- [ ] Columns: "Check in", "Check out", "Total Days", "Room Type", "Occ.", "Tariff", "No. Of Rooms", "Total including GST".
+- [ ] Check-in and Check-out cells are vertically merged down the full height of the Room Line rows (date on the first line, time — `12pm`/`11am` style — on the second line within the same merged cell), reproducing both reference PDFs' layout exactly, not repeated per row.
+- [ ] Room Line rows render in a fixed order: whatever custom room types were entered, in entry order, followed always by Extra Beds last — Extra Beds prints even when its Occupancy/Tariff/Rooms/Total are all zero (per SRS §4.3's note, confirmed against both reference PDFs which both print a zero Extra Beds row).
+- [ ] A footer row spans: "Total Occ. <N>" in a cell shaded **green**, then "Total Charges" label, then "Rs. X,XX,XXX /-" in a cell shaded **yellow/amber** — both colors reproduced from the reference PDFs' own cell shading (SRS §4.7e), not a design guess.
+- [ ] `Total Days`, each Room Line's `Total including GST`, `Total Occ.`, and `Total Charges` are every one of them computed values, never independently re-typed anywhere in this table — a change to a Room Line's Occupancy/Tariff/Rooms upstream in the wizard (or a future edit flow) must be reflected here on next generation without manual reconciliation (SRS §6.5's reliability requirement, applied specifically here).
+**UI:** Quotation PDF rendering component, Accommodation Details section.
+**Tokens:** N/A (fixed reproduction, per STORY-069's note) — the two specific fill colors (green, yellow/amber) should be sampled from the reference PDFs directly during implementation rather than approximated from the app's own `status-confirmed`/`accent-tint` tokens, since an approximate match is not acceptable for a story whose entire purpose is exact reproduction.
+**Edge cases:** An Event with zero Room Lines at all except the mandatory Extra Beds row (accommodation not actually booked, matching STORY-066's "may all be zero" allowance) — the table still renders with its full column headers and the one Extra Beds row, footer totals correctly showing 0/`Rs. 0 /-` rather than an empty or hidden table.
+
+### STORY-071: Quotation per-date Event Details tables (Ceremony merged rows, L.S. display, exact time handling)
+**Flow:** One table per distinct date, appearing after Accommodation Details, in date order — the section both reference PDFs devote the most rows to.
+**Acceptance Criteria:**
+- [ ] One table per distinct calendar date spanned by the Event's Sessions, headed `Event Details – DD/MM/YYYY` (standardizing the heading format — `example_quatation_1.pdf` uses an en-dash with spaces, `example_quatation_2.pdf` uses a plain hyphen with no leading space before the date; this story picks the en-dash-with-spaces form and applies it consistently, since the two sources disagree with each other).
+- [ ] Columns: unlabeled first column, "Time", "Number of Pax", "Cost", "Menu".
+- [ ] Food/Dining rows (one per Meal Item on that date, in entry order): first column = Meal Name; Time = exactly what was entered on that Item (blank when the Item's own time fields were left blank — both reference PDFs leave most rows' Time blank after the first, and this story reproduces that by rendering whatever is actually stored, not by inventing a "only show time once" rule); Number of Pax = the bare entered number, or `L.S. (Npax)` when that Item's `limited_seating` flag is set (SRS Glossary, FR-QUO-8); Cost = `X,XXX/-` format; Menu = a plain numbered list of the Item's resolved Menu Item names (matching both reference PDFs' `1. Tea 2. Coffee …` style), or blank when no Menu Items were attached (per `example_quatation_1.pdf`'s blank-menu "Engagement Cake" row).
+- [ ] Ceremony rows (one per Event Item on that date): render as a single cell **merged across all five columns** (not five empty bordered cells), shaded grey, containing the Event Item's name with its time and/or venue appended inline exactly as entered (e.g. "Engagement Sangeet - Poolside" when a venue was set but no time; "Muhurta 11am – 12:30pm" when a time was set but no venue; bare "Muhurta" when neither was set) — reproducing every one of the three inline-label variants seen across both reference PDFs, not just the simplest case.
+- [ ] An Event Item with every field left blank still renders as a bare grey merged row (matching `example_quatation_2.pdf`'s one wholly-blank divider row) — this is allowed, not filtered out.
+- [ ] Rows render in the same order Ceremony and Food/Dining Items were entered relative to each other for that date (both reference PDFs interleave them — e.g. Ceremony rows appear between Food/Dining rows, not grouped into two separate blocks) — the renderer must preserve entry/time order across both categories on a given date's table, not sort Food/Dining rows first and Ceremony rows second (or vice versa).
+**UI:** Quotation PDF rendering component, per-date Event Details section.
+**Tokens:** N/A (fixed reproduction) — the grey shade used for Ceremony rows should be sampled from the reference PDFs.
+**Edge cases:** A date with only Ceremony rows and zero Food/Dining rows (unlikely but not disallowed by the data model) still renders a valid table with headers and just the grey row(s). A Menu list long enough to need multiple lines (per `example_quatation_1.pdf`'s 16-item Dinner menu) must not be truncated or force an awkward page break mid-list — allow the row to grow to fit its full numbered list.
+
+### STORY-072: Quotation Total Cost Summary (aggregate Food Cost, per-Session venue rows, manual line items with notes, Grand Total)
+**Flow:** The Total Cost Summary section, the last data table before the static footer — this is the section STORY-072 through the arithmetic in SRS FR-QUO-9 exists specifically to get exactly right.
+**Acceptance Criteria:**
+- [ ] Columns: "Cost Item" (leftmost, merged per date-block), "Sub Cost Item", "Pax", "Cost Per Plate", "Total Cost", "Total Cost with GST".
+- [ ] One merged block per date, labeled "Wedding Venue and Catering – DD/MM/YYYY" (or "Venue and Catering DD/MM/YYYY" — pick one of the two reference PDFs' label conventions and apply it consistently to every Quotation this system generates, rather than reproducing the fact that the two sources phrase it differently).
+- [ ] Within each date's block: one venue row per Session on that date (not one per date — a date with two Sessions at two venues, per `example_quatation_2.pdf`'s Halad+Engagement, gets two venue rows), each showing only Total Cost with GST = that Session's venue cost, no Pax/Cost-Per-Plate/Total-Cost value; then one row per Meal Item on that date showing Sub Cost Item, Pax (`1` when that Item's `limited_seating` is set, per FR-QUO-8, feeding this computation — not the literal headcount), Cost Per Plate, and Total Cost = Pax × Cost Per Plate, with no value in the Total Cost with GST column on these rows.
+- [ ] **Exactly one "Food Cost" row for the entire table** (not one per date-block) whose Total Cost equals the sum of every Meal Item's Total Cost across every date, and whose Total Cost with GST equals that sum × (1 + GST%) — verified against both reference PDFs' printed figures: `597150` / `627007.5` (5% GST) for `example_quatation_1.pdf`, and `391500` / `411075` (5% GST) for `example_quatation_2.pdf`. A per-date subtotal row is an explicit non-goal here — this story exists partly to correct that exact mistake from an earlier draft of this spec.
+- [ ] An Accommodation row: only Total Cost with GST populated, equal to the Accommodation Block's own `total_charges` (already GST-inclusive — no further GST math applied to it here).
+- [ ] Zero or more manually-added rows (from wizard Step 5, STORY-068): name in Cost Item, optional note in Sub Cost Item (e.g. "poolside engg sangeet + Wedding(Vidhi mandap with saptapadi)" for Decoration, "wedding" for Bhatji — both reference PDFs carry exactly this kind of note, so the field renders when present and is blank when not, never fabricated), and the entered flat amount in Total Cost with GST.
+- [ ] A Grand Total row: "Grand Total" in the Cost Per Plate column, and the sum of every Total Cost with GST value above it (every venue row + the one Food Cost row + Accommodation + every manual row) in the Total Cost with GST column — verified to reproduce `Rs. 10,73,208 /-` and `Rs. 9,49,555 /-` respectively (to the rupee, after standard rounding of the 0.5 in `1073207.5`).
+- [ ] The Food Cost row and the Grand Total row are both shaded yellow/amber (SRS §4.7e/FR-QUO-9's color-coding note); no other row in this table carries background shading.
+**UI:** Quotation PDF rendering component, Total Cost Summary section.
+**Tokens:** N/A (fixed reproduction) — sample the yellow/amber shade from the reference PDFs.
+**Edge cases:** A Meal Item with Pax or Cost Per Plate genuinely entered as 0 (per `example_quatation_1.pdf`'s one blank/zero row between Chai Tapri and Drinks) contributes 0 to the Food Cost sum without being hidden or erroring — render it as a real 0 row, matching the reference PDF's own inclusion of it. A GST% edited away from the 5% default for one specific generation (SRS §4.9 allows per-quotation variance) must be the rate actually used in that generation's Food Cost with-GST computation, and that same rate (not always 5%) must be what a fidelity re-check computes against for that specific Quotation.
+
+### STORY-073: Quotation static footer — Terms & Conditions, Documents Required, Bank Details
+**Flow:** The fixed boilerplate that closes every Quotation, unchanged regardless of the Event's data.
+**Acceptance Criteria:**
+- [ ] Terms & Conditions renders as a bulleted list with the exact wording from the reference PDFs' Terms & Conditions section, verbatim — every bullet reproduced character-for-character (the twelve bullets covering booking amount, balance timing, additional charges, price changes, cancellation policy, property damage, one-month validity, water bottles, banquet hall timing/overtime rate, room check-in/out timing, parking/security disclaimer, and the right to modify terms), not paraphrased or summarized.
+- [ ] Documents Required from Bride and Groom renders as a numbered list, verbatim: Aadhar Card, Pan Card, Leaving/Birth Certificate, Ration Card, 2 passport size photos each, Wedding Card — in that exact order.
+- [ ] Bank Account Details renders as a table with rows Name/Account Number/Bank Name/Branch Name/IFSC/GST Number, values taken verbatim from the reference PDFs (Aaradhya Adorer / 142320110000165 / Bank of India / Talawade / BKID0001423 / 27ABLFA0695F1ZC) — these are organization-level constants, not per-Event data, so they're hardcoded (or pulled from a single org-settings source, if one already exists) rather than entered per Quotation.
+- [ ] "Regards / Aaradhya Banquets" renders as the final closing line.
+- [ ] None of this section is user-editable from any screen in the app — it is compiled into the PDF template directly (SRS FR-QUO-10).
+**UI:** Quotation PDF rendering component, static footer section.
+**Tokens:** N/A (fixed reproduction).
+**Edge cases:** None specific to data — this section's correctness is purely a text-fidelity check (STORY-075 covers verifying it word-for-word against the reference PDFs).
+
+### STORY-074: Quotation Snapshot persistence and history list
+**Flow:** Every time "Generate Quotation PDF" runs (from Event Detail, STORY-052's existing action, or from the wizard's Step 5, STORY-068), the render is persisted as a Quotation Snapshot, and the Event Page exposes a list of every prior generation for that Event — per `Aaradhya_Quotation_PDF_Strategy.md` and SRS FR-QUO-11/12.
+**Acceptance Criteria:**
+- [ ] A new `quotations` collection stores, per generation: `eventId`, `generatedAt`, `generatedBy` (the User Account that triggered it), `storageKey` (the object-storage key — never a bare public URL), and `grandTotal` (the snapshot's own computed Grand Total, so a history list can render without re-fetching/re-rendering the PDF itself).
+- [ ] `GET /events/:id/quotation.pdf` (the existing endpoint) is extended so that, alongside streaming the freshly-rendered PDF back to the caller as it does today, it also uploads that same render to object storage and writes the corresponding `quotations` document — every call both serves and persists; there is no separate "confirm as final" step.
+- [ ] A new `GET /events/:id/quotations` endpoint lists that Event's Quotation Snapshots, newest first, with `generatedAt`/`generatedBy`/`grandTotal` per entry and a short-lived signed download URL per entry (never a permanent public link stored or returned as-is).
+- [ ] The Event Page (Overview tab or a small dedicated area near the "Generate Quotation PDF" action) renders this history list, each entry re-downloadable via its signed URL.
+- [ ] `eventManagerOnly` gating on both new/extended endpoints, matching every other financial-adjacent endpoint's existing convention (Payment Record, full Change Log).
+**UI:** A small quotation-history list on the Event Page, fed by the new list endpoint.
+**Tokens:** `surface`, `line`, `type-body-m`, `type-label-s`.
+**Edge cases:** Regenerating a Quotation for an Event whose data changed since the last generation produces a new snapshot with a different Grand Total — the history list must show both snapshots distinctly (by timestamp and Grand Total), never overwrite or merge them.
+
+### STORY-075: Quotation fidelity acceptance test — golden-file comparison against the two reference PDFs
+**Flow:** No new user-facing flow — this is the story that proves STORY-069 through STORY-073 actually reproduce `example_quatation_1.pdf` and `example_quatation_2.pdf`, rather than merely believing they do.
+**Acceptance Criteria:**
+- [ ] Two fixture Events are seeded in a test database, with every field populated to exactly match the data underlying `example_quatation_1.pdf` (Sneha & Nishant) and `example_quatation_2.pdf` (Saish Rege) respectively — every Client Contact, every Session, every Accommodation Room Line (including the zero-valued Extra Beds row), every Meal/Ceremony Item (including L.S. flags and blank-field Ceremony rows), and the manually-added Decoration/Photographer/Bhatji line items with their notes, taken field-for-field from the two source PDFs.
+- [ ] For each fixture Event, generating a Quotation produces a Total Cost Summary whose Food Cost row reads exactly `597150` / `627007.5` (fixture 1) and `391500` / `411075` (fixture 2), and whose Grand Total row reads exactly `Rs. 10,73,208 /-` (fixture 1) and `Rs. 9,49,555 /-` (fixture 2) — asserted as exact string/number equality in an automated test, not visual inspection.
+- [ ] Every table's row count, column headers, and cell values (Client Details, Event Details, Accommodation Details including the Extra-Beds row and the green/yellow footer shading, both per-date Event Details tables including every Ceremony merged-row variant, and the Total Cost Summary) are asserted against the corresponding values transcribed from the two reference PDFs, table by table, in an automated snapshot-style test.
+- [ ] The static footer (Terms & Conditions, Documents Required, Bank Details) is asserted word-for-word against the reference PDFs' text, catching any drift introduced after STORY-073 ships.
+- [ ] This test suite is wired into CI so any future change to the Quotation renderer that breaks fidelity against either reference PDF fails the build, rather than silently regressing.
+**UI:** None (test-only story).
+**Tokens:** N/A (test-only story).
+**Edge cases:** A future GST% change (org-wide default, SRS §4.9) must not silently break this test — the two fixture Events pin their own GST% explicitly to 5% (matching what both reference PDFs actually used) regardless of whatever the org-wide default happens to be at test-run time, so the fixtures stay valid even if the default rate is changed later.
