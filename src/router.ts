@@ -23,9 +23,12 @@ import {
   updateItem,
   updateSession,
 } from './controllers/events.js';
+import { createEventType, listEventTypes, updateEventType } from './controllers/event-types.js';
 import { checkHealth } from './controllers/health.js';
 import { createMenuItem, listMenuItems } from './controllers/menu-items.js';
+import { createRoomType, listRoomTypes, updateRoomType } from './controllers/room-types.js';
 import { createUser, listEventManagers, listUsers, updateUser } from './controllers/users.js';
+import { createVenue, listVenues, updateVenue } from './controllers/venues.js';
 import { authenticate, requireRole } from './middleware/auth.js';
 import { Role } from './models/user.js';
 
@@ -142,5 +145,41 @@ export const router = server.router(contract, {
   getDashboard: {
     middleware: authenticatedOnly,
     handler: getDashboard,
+  },
+  listVenues: {
+    middleware: authenticatedOnly,
+    handler: listVenues,
+  },
+  createVenue: {
+    middleware: eventManagerOnly,
+    handler: createVenue,
+  },
+  updateVenue: {
+    middleware: eventManagerOnly,
+    handler: updateVenue,
+  },
+  listEventTypes: {
+    middleware: authenticatedOnly,
+    handler: listEventTypes,
+  },
+  createEventType: {
+    middleware: eventManagerOnly,
+    handler: createEventType,
+  },
+  updateEventType: {
+    middleware: eventManagerOnly,
+    handler: updateEventType,
+  },
+  listRoomTypes: {
+    middleware: authenticatedOnly,
+    handler: listRoomTypes,
+  },
+  createRoomType: {
+    middleware: eventManagerOnly,
+    handler: createRoomType,
+  },
+  updateRoomType: {
+    middleware: eventManagerOnly,
+    handler: updateRoomType,
   },
 });

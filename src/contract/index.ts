@@ -37,12 +37,30 @@ import {
   menuItemResultSchema,
 } from './schemas/menu-item.js';
 import {
+  createEventTypeBodySchema,
+  eventTypeIdParamsSchema,
+  eventTypeResultSchema,
+  updateEventTypeBodySchema,
+} from './schemas/event-type.js';
+import {
+  createRoomTypeBodySchema,
+  roomTypeIdParamsSchema,
+  roomTypeResultSchema,
+  updateRoomTypeBodySchema,
+} from './schemas/room-type.js';
+import {
   createUserBodySchema,
   eventManagerSummarySchema,
   updateUserBodySchema,
   userIdParamsSchema,
   userResultSchema,
 } from './schemas/user.js';
+import {
+  createVenueBodySchema,
+  updateVenueBodySchema,
+  venueIdParamsSchema,
+  venueResultSchema,
+} from './schemas/venue.js';
 
 const c = initContract();
 
@@ -358,5 +376,102 @@ export const contract = c.router({
     },
     summary:
       'Role-filtered dashboard aggregate: today/upcoming/tentative/confirmed counts + upcoming-events list (any authenticated caller)',
+  },
+  // The three Admin/Configuration master lists (STORY-061). Every GET is
+  // authenticatedOnly — every role's dropdowns (Session/Room Line entry)
+  // need to read these, even though only Event Manager can edit them
+  // (SRS FR-CFG-6). Deactivating an entry (PATCH active:false) never
+  // deletes it and never cascades to any Event/Session/Room Line already
+  // referencing its name (they copied the name/cost at selection time —
+  // see the Venue/RoomType model comments).
+  listVenues: {
+    method: 'GET',
+    path: '/venues',
+    responses: {
+      200: z.array(venueResultSchema),
+    },
+    summary: 'List every Venue, active and inactive (any authenticated caller)',
+  },
+  createVenue: {
+    method: 'POST',
+    path: '/venues',
+    body: createVenueBodySchema,
+    responses: {
+      201: venueResultSchema,
+      409: apiErrorSchema,
+    },
+    summary: 'Add a Venue to the master list (Event Manager only)',
+  },
+  updateVenue: {
+    method: 'PATCH',
+    path: '/venues/:id',
+    pathParams: venueIdParamsSchema,
+    body: updateVenueBodySchema,
+    responses: {
+      200: venueResultSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    summary: 'Edit name/default cost and/or toggle active on a Venue (Event Manager only)',
+  },
+  listEventTypes: {
+    method: 'GET',
+    path: '/event-types',
+    responses: {
+      200: z.array(eventTypeResultSchema),
+    },
+    summary: 'List every Event Type, active and inactive (any authenticated caller)',
+  },
+  createEventType: {
+    method: 'POST',
+    path: '/event-types',
+    body: createEventTypeBodySchema,
+    responses: {
+      201: eventTypeResultSchema,
+      409: apiErrorSchema,
+    },
+    summary: 'Add an Event Type to the master list (Event Manager only)',
+  },
+  updateEventType: {
+    method: 'PATCH',
+    path: '/event-types/:id',
+    pathParams: eventTypeIdParamsSchema,
+    body: updateEventTypeBodySchema,
+    responses: {
+      200: eventTypeResultSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    summary: 'Edit name and/or toggle active on an Event Type (Event Manager only)',
+  },
+  listRoomTypes: {
+    method: 'GET',
+    path: '/room-types',
+    responses: {
+      200: z.array(roomTypeResultSchema),
+    },
+    summary: 'List every Room Type, active and inactive (any authenticated caller)',
+  },
+  createRoomType: {
+    method: 'POST',
+    path: '/room-types',
+    body: createRoomTypeBodySchema,
+    responses: {
+      201: roomTypeResultSchema,
+      409: apiErrorSchema,
+    },
+    summary: 'Add a Room Type to the master list (Event Manager only)',
+  },
+  updateRoomType: {
+    method: 'PATCH',
+    path: '/room-types/:id',
+    pathParams: roomTypeIdParamsSchema,
+    body: updateRoomTypeBodySchema,
+    responses: {
+      200: roomTypeResultSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    summary: 'Edit name/default tariff and/or toggle active on a Room Type (Event Manager only)',
   },
 });
