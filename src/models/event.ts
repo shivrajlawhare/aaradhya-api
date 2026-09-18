@@ -81,6 +81,22 @@ export interface ExtrasAttributes {
   bhatji: number;
 }
 
+// SRS §5.4 FR-QUO-9a / Assumption A13 — the Total Cost Summary's
+// manually-added rows are an open-ended list of arbitrarily-named line
+// items (Decoration/Photographer/Bhatji are just examples now, not a fixed
+// set), each with an optional short free-text note (e.g. "poolside
+// engagement sangeet + wedding mandap decor" — both reference quotations
+// carry exactly this kind of note under Decoration/Bhatji). Additive
+// alongside the existing decoration/photographer/bhatji fields on
+// ExtrasAttributes above, not a replacement — computeTotalCostSummary
+// (services/quotation.ts) sums both into the same extrasTotal, so nothing
+// that already reads extrasTotal needs to change to pick these up.
+export interface ManualLineItemAttributes {
+  name: string;
+  note?: string;
+  amount: number;
+}
+
 // SRS §4.8 — the fixed, server-defined set of Document Checklist Item keys.
 // Never extended via the API (STORY-024's own AC: reject any key outside
 // this list) — a flat object with one boolean per fixed key, not an
@@ -237,6 +253,12 @@ export interface EventAttributes {
   payment: PaymentAttributes;
   documentsChecklist: DocumentsChecklistAttributes;
   extras: ExtrasAttributes;
+  // SRS FR-QUO-9a / A13 — see ManualLineItemAttributes above. A plain array
+  // (not a DocumentArray) since nothing needs a manual line item's own
+  // generated sub-id back out yet — this story never edits/deletes one
+  // individually, only ever whole-array-replaces the list at creation time,
+  // the same "no id exposed" precedent roomLines already established.
+  extraLineItems: ManualLineItemAttributes[];
   // Typed as a DocumentArray (not plain SessionAttributes[], unlike
   // clientContacts/roomLines above) — STORY-027 is the first place a
   // Session's own generated sub-id needs to come back out, which needs
@@ -316,6 +338,16 @@ const extrasSchema = new Schema<ExtrasAttributes>(
   },
   { _id: false },
 );
+
+// No `_id: false` here — unlike roomLineSchema, this array element still
+// gets Mongoose's own default auto _id (harmless, simply never surfaced in
+// the public response, same "no id exposed" reasoning the attributes
+// comment above documents) since there's no reason to suppress it.
+const manualLineItemSchema = new Schema<ManualLineItemAttributes>({
+  name: { type: String, required: true, trim: true },
+  note: { type: String, trim: true },
+  amount: { type: Number, required: true, min: 0 },
+});
 
 // Every field defaults to its "nothing entered yet" value — counts/flags
 // default to 0/false, same convention documentsChecklistSchema already uses
@@ -455,6 +487,10 @@ const eventSchema = new Schema<EventAttributes>(
     // Always instantiated, same reasoning as payment/documentsChecklist
     // above — a brand-new Event reads decoration/photographer/bhatji as 0.
     extras: { type: extrasSchema, required: true, default: () => ({}) },
+    // Zero or more, same "no create-time minimum" reasoning clientContacts/
+    // sessions already document — a brand-new Event may have no manual line
+    // items entered yet.
+    extraLineItems: { type: [manualLineItemSchema], default: [] },
     // Zero or more at the schema level, same reasoning as clientContacts —
     // this story only defines the shape; an "at least one Session" rule (if
     // any) belongs to whichever later story adds the add/remove endpoint.

@@ -35,6 +35,7 @@ const fixtureEvent: VisibilityEvent = {
     weddingCard: false,
   },
   extras: { decoration: 1000, photographer: 0, bhatji: 0 },
+  extraLineItems: [{ name: 'Photographer', note: 'wedding', amount: 25000 }],
   sessions: [
     {
       id: 'session-1',
@@ -132,14 +133,16 @@ describe('filterEventForRole', () => {
       expect(result.sessions[0]!.items![0]).toMatchObject({ type: ItemType.Meal, mealName: 'Lunch' });
     });
 
-    it('genuinely omits payment, extras, venueCost, and Item money fields', () => {
+    it('genuinely omits payment, extras, extraLineItems, venueCost, and Item money fields', () => {
       expect(result.payment).toBeUndefined();
       expect(result.extras).toBeUndefined();
+      expect(result.extraLineItems).toBeUndefined();
       expect(result.sessions[0]!.venueCost).toBeUndefined();
       expect(result.sessions[0]!.items![0]!.costPerPlate).toBeUndefined();
       expect(result.sessions[0]!.items![0]!.totalCost).toBeUndefined();
       expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty('payment');
       expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty('extras');
+      expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty('extraLineItems');
     });
 
     it('genuinely omits non-food setup details and accommodation', () => {

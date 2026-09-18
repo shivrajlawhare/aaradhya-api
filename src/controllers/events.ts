@@ -14,6 +14,7 @@ import {
   type EventAttributes,
   type EventDocument,
   type ExtrasAttributes,
+  type ManualLineItemAttributes,
   type PaymentAttributes,
   type RoomLineAttributes,
   type SessionAttributes,
@@ -110,6 +111,22 @@ const invalidEventManager: Extract<CreateEventResponse, { status: 400 }> = {
   },
 };
 
+// STORY-068 — same body/reasoning as invalidMenuItemReference above, typed
+// against CreateEventResponse instead of CreateItemResponse since a bad
+// menuItems reference nested inside createEvent's own sessions[].items[]
+// is caught by this route now too, not only the standalone
+// POST .../items endpoint.
+const invalidMenuItemReferenceOnCreateEvent: Extract<CreateEventResponse, { status: 400 }> = {
+  status: 400,
+  body: {
+    error: {
+      code: 'VALIDATION_ERROR',
+      message: 'Invalid request body.',
+      details: [{ field: 'sessions', message: 'menuItems must reference existing Menu Items.' }],
+    },
+  },
+};
+
 // checkIn/checkOut/totalDays are nullable, not just absent — an Event can
 // genuinely have no accommodation entered yet (accommodation itself is
 // optional on the Event, STORY-018). totalOccupancy/totalCharges default to
@@ -119,20 +136,26 @@ const toPublicAccommodation = (accommodation: AccommodationAttributes | undefine
   const checkIn = accommodation?.checkIn ?? null;
   const checkOut = accommodation?.checkOut ?? null;
   const roomLines = accommodation?.roomLines ?? [];
+  const totalDays = checkIn && checkOut ? computeTotalDays(checkIn, checkOut) : null;
+  // A room line entered before check-in/check-out are both set still needs
+  // some total to display — falls back to 1 (STORY-068's own decision,
+  // see accommodation.ts's own computeRoomLineTotalInclGst comment) rather
+  // than always reading 0 for every line until dates are chosen.
+  const totalDaysForMath = totalDays ?? 1;
 
   return {
     checkIn,
     checkOut,
-    totalDays: checkIn && checkOut ? computeTotalDays(checkIn, checkOut) : null,
+    totalDays,
     roomLines: roomLines.map((line) => ({
       roomType: line.roomType,
       occupancy: line.occupancy,
       tariff: line.tariff,
       noOfRooms: line.noOfRooms,
-      totalInclGst: computeRoomLineTotalInclGst(line),
+      totalInclGst: computeRoomLineTotalInclGst(line, totalDaysForMath),
     })),
     totalOccupancy: computeTotalOccupancy(roomLines),
-    totalCharges: computeTotalCharges(roomLines),
+    totalCharges: computeTotalCharges(roomLines, totalDaysForMath),
   };
 };
 
@@ -154,6 +177,9 @@ const toPublicExtras = (extras: ExtrasAttributes) => ({
   photographer: extras.photographer,
   bhatji: extras.bhatji,
 });
+
+const toPublicExtraLineItems = (items: ManualLineItemAttributes[]) =>
+  items.map((item) => ({ name: item.name, note: item.note ?? null, amount: item.amount }));
 
 const toPublicDocumentsChecklist = (checklist: DocumentsChecklistAttributes) => ({
   aadharCard: checklist.aadharCard,
@@ -263,6 +289,7 @@ export const toPublicEvent = (event: EventDocument) => ({
   payment: toPublicPayment(event.payment),
   documentsChecklist: toPublicDocumentsChecklist(event.documentsChecklist),
   extras: toPublicExtras(event.extras),
+  extraLineItems: toPublicExtraLineItems(event.extraLineItems),
   sessions: event.sessions.map(toPublicSession),
   createdBy: event.createdBy.toString(),
   createdAt: event.createdAt,
@@ -308,6 +335,68 @@ const isInvalidEventManagerError = (error: unknown): boolean =>
 // omits it (FR-EVT-1 treats "initial status" as a real creation input, not
 // something always fixed); createdBy always comes from the authenticated
 // caller, never the request body, even if one is present.
+//
+// STORY-068 — sessions (each with their own items) and accommodation are
+// now optional nested input here too (FR-EVT-8: "exactly one data-entry
+// flow"), not only settable afterward via the separate per-Session/
+// per-Item/PATCH-accommodation routes. Building the nested `sessions`
+// array up front (resolving each Meal Item's own menuItems refs first,
+// the same find-or-create resolveMenuItemRefs already used by the
+// standalone createItem) lets the whole tree persist in the single
+// Event.create() call below — every field on it is embedded, not
+// referenced, so there's no multi-document transaction to reason about.
+const buildSessionsInput = async (
+  sessions: ServerInferRequest<typeof contract.createEvent>['body']['sessions'],
+): Promise<Record<string, unknown>[] | 'invalid-menu-item-reference'> => {
+  const resolvedSessions: Record<string, unknown>[] = [];
+  for (const session of sessions ?? []) {
+    const resolvedItems: Record<string, unknown>[] = [];
+    for (const item of session.items ?? []) {
+      if (item.type === ItemType.Meal) {
+        let menuItemIds: Types.ObjectId[] = [];
+        if (item.menuItems) {
+          const resolved = await resolveMenuItemRefs(item.menuItems);
+          if (!resolved) {
+            return 'invalid-menu-item-reference';
+          }
+          menuItemIds = resolved;
+        }
+        resolvedItems.push({
+          type: ItemType.Meal,
+          mealName: item.mealName,
+          pax: item.pax,
+          costPerPlate: item.costPerPlate,
+          limitedSeating: item.limitedSeating ?? false,
+          menuItems: menuItemIds,
+          startTime: item.startTime,
+          endTime: item.endTime,
+        });
+      } else {
+        resolvedItems.push({
+          type: ItemType.Event,
+          eventName: item.eventName,
+          venue: item.venue,
+          startTime: item.startTime,
+          endTime: item.endTime,
+        });
+      }
+    }
+    resolvedSessions.push({
+      sessionType: session.sessionType,
+      venue: session.venue,
+      venueCost: session.venueCost,
+      startDate: session.startDate,
+      endDate: session.endDate,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      pax: session.pax,
+      setup: session.setup,
+      items: resolvedItems,
+    });
+  }
+  return resolvedSessions;
+};
+
 export const createEvent: AppRouteMutationImplementation<typeof contract.createEvent> = async ({
   body,
   req,
@@ -318,18 +407,30 @@ export const createEvent: AppRouteMutationImplementation<typeof contract.createE
     throw new Error('createEvent handler ran without an authenticated user.');
   }
 
+  const sessionsInput = await buildSessionsInput(body.sessions);
+  if (sessionsInput === 'invalid-menu-item-reference') {
+    return invalidMenuItemReferenceOnCreateEvent;
+  }
+
   try {
     const event = await Event.create({
       eventFamilyType: body.eventFamilyType,
       status: body.status ?? EventStatus.Tentative,
       eventManager: body.eventManager,
       clientContacts: body.clientContacts,
+      sessions: sessionsInput,
+      accommodation: body.accommodation,
+      extras: body.extras,
+      extraLineItems: body.extraLineItems ?? [],
       createdBy: req.user.id,
     });
     return { status: 201, body: toPublicEvent(event) };
   } catch (error) {
     if (isInvalidEventManagerError(error)) {
       return invalidEventManager;
+    }
+    if (isInvalidSessionDateRangeError(error)) {
+      return invalidSessionDateRange;
     }
     throw error;
   }
@@ -884,8 +985,20 @@ const computeEventQuotationSummary = (event: EventDocument) =>
           limitedSeating: item.limitedSeating,
         })),
       })),
-    accommodationTotalCharges: computeTotalCharges(event.accommodation?.roomLines ?? []),
-    extras: event.extras,
+    accommodationTotalCharges: computeTotalCharges(
+      event.accommodation?.roomLines ?? [],
+      // Same "fall back to 1 before dates are both set" reasoning
+      // toPublicAccommodation's own totalDaysForMath documents.
+      event.accommodation?.checkIn && event.accommodation.checkOut
+        ? computeTotalDays(event.accommodation.checkIn, event.accommodation.checkOut)
+        : 1,
+    ),
+    extras: {
+      decoration: event.extras.decoration,
+      photographer: event.extras.photographer,
+      bhatji: event.extras.bhatji,
+      extraLineItems: event.extraLineItems,
+    },
   });
 
 export const getQuotationSummary: AppRouteQueryImplementation<typeof contract.getQuotationSummary> = async ({

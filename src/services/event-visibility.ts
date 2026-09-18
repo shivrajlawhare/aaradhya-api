@@ -86,6 +86,12 @@ export interface VisibilityExtras {
   bhatji: number;
 }
 
+export interface VisibilityManualLineItem {
+  name: string;
+  note: string | null;
+  amount: number;
+}
+
 export interface VisibilityEvent {
   id: string;
   eventId: string;
@@ -97,6 +103,7 @@ export interface VisibilityEvent {
   payment?: VisibilityPayment;
   documentsChecklist: VisibilityDocumentsChecklist;
   extras?: VisibilityExtras;
+  extraLineItems?: VisibilityManualLineItem[];
   sessions: VisibilitySession[];
   createdBy: string;
   createdAt: Date;
@@ -119,6 +126,8 @@ export interface VisibilityEvent {
  * documented here since neither source gives an exhaustive field list:
  * - EventManager: everything, unchanged (this story's own regression AC).
  * - Money is hidden end-to-end for every other role: `payment`, `extras`,
+ *   `extraLineItems` (STORY-068's open-ended manual line items — the same
+ *   class of figure as extras, hidden for the same reason),
  *   each Session's `venueCost`, each Item's `costPerPlate`/`totalCost`,
  *   and each Accommodation room line's `tariff`/`totalInclGst` plus the
  *   block's own `totalCharges` — the SRS only names the `payment` object
@@ -158,6 +167,7 @@ export const filterEventForRole = (event: VisibilityEvent, role: Role): Visibili
     accommodation: canSeeAccommodation && event.accommodation ? filterAccommodation(event.accommodation) : undefined,
     payment: undefined,
     extras: undefined,
+    extraLineItems: undefined,
     sessions: event.sessions.map((session) => filterSession(session, { canSeeSetup, canSeeMenu })),
   };
 };

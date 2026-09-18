@@ -322,6 +322,132 @@ describe('POST /events', () => {
     expect(response.status).toBe(201);
     expect(response.body.eventManager).toBe(inactiveManager.id);
   });
+
+  it('creates nested Sessions with their own Items and Accommodation in the same call (FR-EVT-8)', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+
+    const response = await createEventAs(
+      token,
+      validPayload(manager.id, {
+        sessions: [
+          validSessionPayload({
+            sessionType: 'Wedding',
+            venue: 'Lawn',
+            items: [validMealItemPayload({ mealName: 'Lunch', pax: 10, costPerPlate: 200 }), validEventItemPayload()],
+          }),
+        ],
+        accommodation: { checkIn: '2026-06-14', checkOut: '2026-06-16', roomLines: [{ roomType: 'Deluxe', occupancy: 2, tariff: 2500, noOfRooms: 3 }] },
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body.sessions).toHaveLength(1);
+    expect(response.body.sessions[0]).toMatchObject({ sessionType: 'Wedding', venue: 'Lawn' });
+    expect(response.body.sessions[0].items).toHaveLength(2);
+    expect(response.body.sessions[0].items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'Meal', mealName: 'Lunch', totalCost: 2000 }),
+        expect.objectContaining({ type: 'Event', eventName: 'Muhurta' }),
+      ]),
+    );
+    expect(response.body.accommodation.roomLines).toHaveLength(1);
+    expect(response.body.accommodation.totalDays).toBe(3);
+
+    const stored = await Event.findById(response.body.id);
+    expect(stored?.sessions).toHaveLength(1);
+    expect(stored?.sessions[0]?.items).toHaveLength(2);
+  });
+
+  it('resolves a nested Meal Item menuItems reference by name, persisting it for future reuse', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+
+    const response = await createEventAs(
+      token,
+      validPayload(manager.id, {
+        sessions: [
+          validSessionPayload({ items: [validMealItemPayload({ menuItems: [{ name: 'Paneer Tikka' }] })] }),
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body.sessions[0].items[0].menuItems).toHaveLength(1);
+
+    const search = await request(app).get('/menu-items').query({ search: 'Paneer' }).set('Authorization', `Bearer ${token}`);
+    expect(search.body).toHaveLength(1);
+    expect(search.body[0]?.id).toBe(response.body.sessions[0].items[0].menuItems[0]);
+  });
+
+  it('returns 400, not a silent no-op, when a nested Item menuItems id does not exist', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+
+    const response = await createEventAs(
+      token,
+      validPayload(manager.id, {
+        sessions: [
+          validSessionPayload({ items: [validMealItemPayload({ menuItems: [{ id: '507f1f77bcf86cd799439011' }] })] }),
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    const events = await Event.find({});
+    expect(events).toHaveLength(0);
+  });
+
+  it('returns 400 for a nested Session whose end_date is before its start_date', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+
+    const response = await createEventAs(
+      token,
+      validPayload(manager.id, {
+        sessions: [validSessionPayload({ startDate: '2026-06-15', endDate: '2026-06-10' })],
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('creates extraLineItems (open-ended manual line items, FR-QUO-9a) alongside the fixed extras fields', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+
+    const response = await createEventAs(
+      token,
+      validPayload(manager.id, {
+        extras: { decoration: 15000 },
+        extraLineItems: [
+          { name: 'Photographer', note: 'wedding', amount: 25000 },
+          { name: 'Mehendi Artist', amount: 8000 },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body.extras.decoration).toBe(15000);
+    expect(response.body.extraLineItems).toEqual([
+      { name: 'Photographer', note: 'wedding', amount: 25000 },
+      { name: 'Mehendi Artist', note: null, amount: 8000 },
+    ]);
+  });
+
+  it('defaults sessions/accommodation/extraLineItems to empty when omitted, matching the pre-STORY-068 create shape', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+
+    const response = await createEventAs(token, validPayload(manager.id));
+
+    expect(response.status).toBe(201);
+    expect(response.body.sessions).toEqual([]);
+    expect(response.body.extraLineItems).toEqual([]);
+    expect(response.body.accommodation.checkIn).toBeNull();
+  });
 });
 
 describe('GET /events', () => {
@@ -612,10 +738,12 @@ describe('GET /events/:id', () => {
 
     const response = await getEventAs(token, created.body.id);
 
+    // No check_in/check_out set — total_days falls back to 1 (STORY-068's
+    // own decision). 5000 × 1 room × 1 day × 1.05 = 5250.
     expect(response.body.accommodation.roomLines).toEqual([
-      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1, totalInclGst: 5900 },
+      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1, totalInclGst: 5250 },
     ]);
-    expect(response.body.accommodation.totalCharges).toBe(5900);
+    expect(response.body.accommodation.totalCharges).toBe(5250);
   });
 
   it('includes payment, defaulting to 0/null for a freshly created Event', async () => {
@@ -825,7 +953,9 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
     expect(response.body.clientContacts).toHaveLength(1);
     expect(response.body.payment.totalEstimatedAmount).toBe(50000);
     expect(response.body.extras.decoration).toBe(1000);
-    expect(response.body.accommodation.totalCharges).toBe(5900);
+    // No check_in/check_out set — total_days falls back to 1. 5000 × 1
+    // room × 1 day × 1.05 = 5250.
+    expect(response.body.accommodation.totalCharges).toBe(5250);
     expect(response.body.sessions[0].venueCost).toBeDefined();
     expect(response.body.sessions[0].setup).toBeDefined();
     expect(response.body.sessions[0].items).toHaveLength(2);
@@ -1179,11 +1309,11 @@ describe('PATCH /events/:id/accommodation', () => {
     expect(response.status).toBe(200);
     expect(response.body.totalDays).toBe(2);
     expect(response.body.totalOccupancy).toBe(8); // (2*2) + (4*1)
-    // Double: 5000*2*1.18=11800; Suite: 12000*1*1.18=14160; sum=25960.
-    expect(response.body.totalCharges).toBe(25960);
+    // Double: 5000*2 rooms*2 days*1.05=21000; Suite: 12000*1 room*2 days*1.05=25200; sum=46200.
+    expect(response.body.totalCharges).toBe(46200);
     expect(response.body.roomLines).toEqual([
-      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2, totalInclGst: 11800 },
-      { roomType: 'Suite', occupancy: 4, tariff: 12000, noOfRooms: 1, totalInclGst: 14160 },
+      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2, totalInclGst: 21000 },
+      { roomType: 'Suite', occupancy: 4, tariff: 12000, noOfRooms: 1, totalInclGst: 25200 },
     ]);
   });
 
@@ -1213,7 +1343,8 @@ describe('PATCH /events/:id/accommodation', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.body.totalCharges).toBe(5900); // 5000*1*1.18, not 999999
+    // No check_in/check_out set — total_days falls back to 1.
+    expect(response.body.totalCharges).toBe(5250); // 5000*1*1*1.05, not 999999
     expect(response.body.totalOccupancy).toBe(2);
   });
 
@@ -1230,7 +1361,8 @@ describe('PATCH /events/:id/accommodation', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.body.totalCharges).toBe(17700); // 5000*3*1.18, not the earlier 5900
+    // No check_in/check_out set — total_days falls back to 1.
+    expect(response.body.totalCharges).toBe(15750); // 5000*3*1*1.05, not the earlier 5250
   });
 
   it('leaves check_in/check_out untouched when only room_lines is submitted', async () => {
@@ -1878,7 +2010,8 @@ describe('GET /events/:id/quotation-summary', () => {
     await postItemAs(token, eventId, session2.body.id, validMealItemPayload({ pax: 5, costPerPlate: 300 }));
     await postItemAs(token, eventId, session2.body.id, validMealItemPayload({ pax: 2, costPerPlate: 100 }));
 
-    // Accommodation: 5000 tariff × 2 rooms × 1.18 GST = 11800.
+    // Accommodation: no check_in/check_out set, so total_days falls back
+    // to 1 — 5000 tariff × 2 rooms × 1 day × 5% GST = 10500.
     await patchAccommodationAs(token, eventId, {
       roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2 }],
     });
@@ -1888,19 +2021,19 @@ describe('GET /events/:id/quotation-summary', () => {
     const response = await getQuotationSummaryAs(token, eventId);
 
     // venueTotal = 5000 + 3000 = 8000. foodSubtotal = 2000 + 1500 + 200 =
-    // 3700. foodTotalInclGst = 3700 × 1.18 = 4366. accommodationTotal =
-    // 11800. extrasTotal = 1000 + 1500 + 500 = 3000. grandTotal = 8000 +
-    // 4366 + 11800 + 3000 = 27166 — the exact same fixture STORY-039's own
-    // unit tests use, confirming this endpoint wires live data through
-    // computeTotalCostSummary with no drift.
+    // 3700. foodTotalInclGst = 3700 × 1.05 = 3885. accommodationTotal =
+    // 10500. extrasTotal = 1000 + 1500 + 500 = 3000. grandTotal = 8000 +
+    // 3885 + 10500 + 3000 = 25385 — confirms this endpoint wires live data
+    // through computeTotalCostSummary (STORY-068's own 5%-default rates)
+    // with no drift.
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       venueTotal: 8000,
       foodSubtotal: 3700,
-      foodTotalInclGst: 4366,
-      accommodationTotal: 11800,
+      foodTotalInclGst: 3885,
+      accommodationTotal: 10500,
       extrasTotal: 3000,
-      grandTotal: 27166,
+      grandTotal: 25385,
     });
   });
 

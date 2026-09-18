@@ -103,14 +103,14 @@ describe('computeTotalCostSummary', () => {
     expect(summary.grandTotal).toBe(8000 + 3700 + 11800 + 3000);
   });
 
-  it('defaults to the configured org GST rate when none is passed', () => {
-    // config.gstRatePercent defaults to 18 (no GST_RATE_PERCENT env var set
-    // in the test environment).
+  it('defaults to the Food GST rate (5%) when none is passed', () => {
+    // FOOD_GST_RATE_PERCENT defaults to 5 — verified against both
+    // reference quotations (STORY-068).
     const summary = computeTotalCostSummary({
       sessions: [{ venueCost: 0, items: [{ type: ItemType.Meal, pax: 1, costPerPlate: 100 }] }],
     });
 
-    expect(summary.foodTotalInclGst).toBe(118);
+    expect(summary.foodTotalInclGst).toBe(105);
   });
 
   it('fixes pax at 1 for a limited_seating Meal Item, per FR-QUO-8/9', () => {
@@ -121,5 +121,23 @@ describe('computeTotalCostSummary', () => {
 
     // Not 200 × 500 = 100000 — the literal headcount is ignored.
     expect(summary.foodSubtotal).toBe(500);
+  });
+
+  it('sums extraLineItems into extrasTotal alongside decoration/photographer/bhatji (FR-QUO-9a)', () => {
+    const summary = computeTotalCostSummary({
+      sessions: [],
+      extras: {
+        decoration: 1000,
+        extraLineItems: [{ amount: 25000 }, { amount: 8000 }],
+      },
+    });
+
+    expect(summary.extrasTotal).toBe(34000);
+  });
+
+  it('treats a missing extraLineItems as contributing 0, not an error', () => {
+    const summary = computeTotalCostSummary({ sessions: [], extras: { decoration: 1000 } });
+
+    expect(summary.extrasTotal).toBe(1000);
   });
 });

@@ -38,21 +38,6 @@ export const eventIdParamsSchema = z.object({
   id: objectIdSchema('Invalid event id.'),
 });
 
-export const createEventBodySchema = z.object({
-  eventFamilyType: z.string().trim().min(1),
-  // Optional — FR-EVT-1 names "initial status" as a creation input, so a
-  // caller may supply any of the four values up front; absent falls back
-  // to Tentative in the controller.
-  status: z.nativeEnum(EventStatus).optional(),
-  eventManager: objectIdSchema('Invalid event_manager id.'),
-  // At least one row here, even though STORY-011's Mongoose schema itself
-  // allows zero — this create endpoint is where FR-EVT-1's "at least one
-  // Client Contact" rule is actually enforced, and every row must carry a
-  // non-empty name (a blank-name placeholder row is rejected, not
-  // silently dropped).
-  clientContacts: z.array(clientContactInputSchema).min(1),
-});
-
 // Every field optional (PATCH semantics — a caller sends only what changed),
 // but a supplied `clientContacts` still needs at least one row: this is the
 // same "at least one Client Contact" rule STORY-012 enforces at create time,
@@ -154,6 +139,26 @@ export const updateEventExtrasBodySchema = extrasFieldsSchema.strict();
 // Event always has all three amounts (defaulted to 0), same "always
 // instantiated" convention payment/documentsChecklist already use.
 export const extrasResultSchema = extrasFieldsSchema.required();
+
+// SRS FR-QUO-9a / Assumption A13 — an open-ended manual line item for the
+// Total Cost Summary (name + optional short note + amount), additive
+// alongside decoration/photographer/bhatji above, not a replacement (both
+// feed the same extrasTotal — see aaradhya-api's services/quotation.ts).
+// No `id` on the result shape — same "whole-array-replace, no per-row edit
+// endpoint" precedent roomLineResultSchema already established; this story
+// never edits or deletes one individually, only ever submits the full list
+// once at Event creation.
+const manualLineItemFieldsSchema = z.object({
+  name: z.string().trim().min(1),
+  note: z.string().trim().min(1).optional(),
+  amount: z.number().min(0),
+});
+
+export const manualLineItemResultSchema = z.object({
+  name: z.string(),
+  note: z.string().nullable(),
+  amount: z.number(),
+});
 
 // The exact 6 fields src/services/quotation.ts' computeTotalCostSummary
 // produces (STORY-039) — this schema doesn't redeclare that shape, it just
@@ -287,6 +292,58 @@ const eventItemBodySchema = z.object({
 // (STORY-031) doing the same at the persistence layer.
 export const createItemBodySchema = z.discriminatedUnion('type', [mealItemBodySchema, eventItemBodySchema]);
 
+// STORY-068 — a Session as it's nested inside createEventBodySchema below,
+// identical to createSessionBodySchema except it also accepts its own
+// `items` up front (a plain createSessionBodySchema never has — Items are
+// otherwise always added afterward via POST .../sessions/:sid/items, see
+// that route's own comment). This is what lets "Generate Quotation" submit
+// Sessions and their Items in the exact same call as the Event itself
+// (FR-EVT-8 — "exactly one data-entry flow").
+const createEventSessionInputSchema = z.object({
+  sessionType: z.string().trim().min(1),
+  venue: z.string().trim().min(1),
+  venueCost: z.number().min(0).optional(),
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+  startTime: z.string().trim().min(1).optional(),
+  endTime: z.string().trim().min(1).optional(),
+  pax: z.number().min(0).optional(),
+  setup: sessionSetupInputSchema.optional(),
+  items: z.array(createItemBodySchema).optional(),
+});
+
+// STORY-068 — the wizard's own "Generate Quotation" submits the entire
+// accumulated flow (Client Contacts, Sessions with their own Items,
+// Accommodation, and the Total Cost Summary's manual line items) as this
+// single call instead of the create-then-PATCH-then-POST-per-Session-
+// then-POST-per-Item sequence every screen before the wizard used
+// (FR-EVT-8: "exactly one data-entry flow," never a sequence of partial
+// per-step writes). Every new field below is optional and defaults to the
+// same empty/zero state createEvent already produced before this story —
+// a caller that only ever sends the original four fields (as every
+// pre-wizard caller still does, e.g. this contract's own tests) keeps
+// working exactly as before.
+export const createEventBodySchema = z.object({
+  eventFamilyType: z.string().trim().min(1),
+  // Optional — FR-EVT-1 names "initial status" as a creation input, so a
+  // caller may supply any of the four values up front; absent falls back
+  // to Tentative in the controller.
+  status: z.nativeEnum(EventStatus).optional(),
+  eventManager: objectIdSchema('Invalid event_manager id.'),
+  // At least one row here, even though STORY-011's Mongoose schema itself
+  // allows zero — this create endpoint is where FR-EVT-1's "at least one
+  // Client Contact" rule is actually enforced, and every row must carry a
+  // non-empty name (a blank-name placeholder row is rejected, not
+  // silently dropped).
+  clientContacts: z.array(clientContactInputSchema).min(1),
+  sessions: z.array(createEventSessionInputSchema).optional(),
+  // Reuses updateAccommodationBodySchema wholesale — identical shape,
+  // same "every field optional, no time component" limitation.
+  accommodation: updateAccommodationBodySchema.optional(),
+  extras: extrasFieldsSchema.optional(),
+  extraLineItems: z.array(manualLineItemFieldsSchema).optional(),
+});
+
 // Every field optional (PATCH semantics) — a caller sends only what
 // changed. No `type` here: switching an Item between Meal/Event isn't
 // something this story's AC asks for, so it isn't offered.
@@ -385,6 +442,8 @@ export const eventResultSchema = z.object({
   // accommodation/payment/documentsChecklist/sessions each already went
   // through.
   extras: extrasResultSchema,
+  // Added STORY-068 alongside extras, same reasoning.
+  extraLineItems: z.array(manualLineItemResultSchema),
   sessions: z.array(sessionResultSchema),
   createdBy: z.string(),
   createdAt: z.date(),
@@ -433,6 +492,7 @@ export const filteredEventResultSchema = eventResultSchema.extend({
   accommodation: filteredAccommodationResultSchema.optional(),
   payment: paymentResultSchema.optional(),
   extras: extrasResultSchema.optional(),
+  extraLineItems: z.array(manualLineItemResultSchema).optional(),
   sessions: z.array(filteredSessionResultSchema),
 });
 

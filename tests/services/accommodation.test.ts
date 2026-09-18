@@ -40,32 +40,40 @@ describe('computeTotalDays', () => {
 });
 
 describe('computeRoomLineTotalInclGst', () => {
-  it('applies a known GST rate against tariff × no_of_rooms', () => {
-    // 5000 × 2 rooms = 10000, +18% GST = 11800.
-    const total = computeRoomLineTotalInclGst({ tariff: 5000, noOfRooms: 2 }, 18);
+  it('applies a known GST rate against tariff × no_of_rooms × total_days', () => {
+    // 5000 × 2 rooms × 1 day = 10000, +18% GST = 11800.
+    const total = computeRoomLineTotalInclGst({ tariff: 5000, noOfRooms: 2 }, 1, 18);
 
     expect(total).toBe(11800);
   });
 
+  // Verified against docs/example_quatations/example_quatation_1.pdf's own
+  // printed Deluxe line (STORY-068): 2500 tariff × 14 rooms × 2 nights ×
+  // 1.05 = 73,500, reproduced identically in both reference quotations for
+  // every room type.
+  it('multiplies by total_days — reproduces the reference quotations’ exact printed numbers', () => {
+    expect(computeRoomLineTotalInclGst({ tariff: 2500, noOfRooms: 14 }, 2)).toBe(73500);
+    expect(computeRoomLineTotalInclGst({ tariff: 3500, noOfRooms: 2 }, 2)).toBe(14700);
+    expect(computeRoomLineTotalInclGst({ tariff: 5000, noOfRooms: 2 }, 2)).toBe(21000);
+  });
+
   it('computes 0 for a placeholder row with no_of_rooms = 0, not an error', () => {
-    const total = computeRoomLineTotalInclGst({ tariff: 5000, noOfRooms: 0 }, 18);
+    const total = computeRoomLineTotalInclGst({ tariff: 5000, noOfRooms: 0 }, 1, 18);
 
     expect(total).toBe(0);
   });
 
   it('rounds to the nearest currency unit', () => {
-    const total = computeRoomLineTotalInclGst({ tariff: 999.99, noOfRooms: 3 }, 18);
+    const total = computeRoomLineTotalInclGst({ tariff: 999.99, noOfRooms: 3 }, 1, 18);
 
     // 999.99 × 3 = 2999.97, × 1.18 = 3539.9646 → rounds to 3539.96.
     expect(total).toBe(3539.96);
   });
 
-  it('defaults to the configured org GST rate when none is passed', () => {
-    // config.gstRatePercent defaults to 18 (no GST_RATE_PERCENT env var set
-    // in the test environment).
-    const total = computeRoomLineTotalInclGst({ tariff: 1000, noOfRooms: 1 });
+  it('defaults to the Accommodation GST rate (5%) when none is passed', () => {
+    const total = computeRoomLineTotalInclGst({ tariff: 1000, noOfRooms: 1 }, 1);
 
-    expect(total).toBe(1180);
+    expect(total).toBe(1050);
   });
 });
 
@@ -94,6 +102,10 @@ describe('computeTotalOccupancy', () => {
 
     expect(computeTotalOccupancy(roomLines)).toBe(10);
   });
+
+  it('is not affected by total_days — headcount, unlike cost, does not scale with nights stayed', () => {
+    expect(computeTotalOccupancy([line({ occupancy: 2, noOfRooms: 3 })])).toBe(6);
+  });
 });
 
 describe('computeTotalCharges', () => {
@@ -105,11 +117,11 @@ describe('computeTotalCharges', () => {
   });
 
   it('is 0 for zero room lines', () => {
-    expect(computeTotalCharges([], 18)).toBe(0);
+    expect(computeTotalCharges([], 1, 18)).toBe(0);
   });
 
   it("sums each line's GST-inclusive total for a single line", () => {
-    expect(computeTotalCharges([line({ tariff: 5000, noOfRooms: 2 })], 18)).toBe(11800);
+    expect(computeTotalCharges([line({ tariff: 5000, noOfRooms: 2 })], 1, 18)).toBe(11800);
   });
 
   it('sums GST-inclusive totals across multiple lines', () => {
@@ -119,6 +131,25 @@ describe('computeTotalCharges', () => {
       line({ tariff: 2000, noOfRooms: 0 }), // 0 — placeholder row
     ];
 
-    expect(computeTotalCharges(roomLines, 18)).toBe(15340);
+    expect(computeTotalCharges(roomLines, 1, 18)).toBe(15340);
+  });
+
+  // Verified against example_quatation_1.pdf's own printed "Total Charges"
+  // footer cell (Rs. 1,09,200 /-): Deluxe (2500×14×2×1.05=73500) +
+  // Executive (3500×2×2×1.05=14700) + Dormatory (5000×2×2×1.05=21000) +
+  // Extra Beds (700×0×2×1.05=0) = 109200.
+  it('reproduces the reference quotation’s exact printed Total Charges', () => {
+    const roomLines = [
+      line({ tariff: 2500, noOfRooms: 14 }),
+      line({ tariff: 3500, noOfRooms: 2 }),
+      line({ tariff: 5000, noOfRooms: 2 }),
+      line({ tariff: 700, noOfRooms: 0 }),
+    ];
+
+    expect(computeTotalCharges(roomLines, 2)).toBe(109200);
+  });
+
+  it('defaults to the Accommodation GST rate (5%) when none is passed', () => {
+    expect(computeTotalCharges([line({ tariff: 1000, noOfRooms: 1 })], 1)).toBe(1050);
   });
 });
