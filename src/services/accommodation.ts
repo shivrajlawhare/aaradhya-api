@@ -1,5 +1,5 @@
 import { roundToCurrency } from '../utils/currency.js';
-import { computeInclusiveDayCount } from '../utils/date.js';
+import { MS_PER_DAY } from '../utils/date.js';
 
 export interface RoomLineInput {
   occupancy: number;
@@ -32,15 +32,24 @@ export interface RoomLineInput {
 // food; nothing ties these two defaults together going forward.
 export const ACCOMMODATION_GST_RATE_PERCENT = 5;
 
-// Inclusive of both the check-in and check-out date: a same-day stay is
-// still 1 day, not 0 (this story's own explicit edge case), and check-in/
-// check-out one calendar day apart is 2 days, not 1. check_out before
+// STORY-070 — corrected to nights stayed (check_out − check_in), clamped to
+// a minimum of 1, not the shared computeInclusiveDayCount's "+1" calendar-
+// day count Session's own computeDurationDays genuinely needs (a Session's
+// duration really is inclusive of both end dates — a 2-day wedding spans
+// two full calendar days of programming) but a hotel stay doesn't: a guest
+// billed nightly for check-in 10-12-2026 → check-out 12-12-2026 owes for 2
+// nights, not 3. Found by cross-checking this exact date pair against
+// example_quatation_1.pdf's own printed "Total Days: 2" (example_
+// quatation_2.pdf's 25-02-2027 → 27-02-2027 → "2" confirms the same
+// formula) — the previous delegation to computeInclusiveDayCount silently
+// returned 3 for this pair, inflating every downstream Accommodation Total
+// (tariff × rooms × total_days × 1.05) by 50% for a 2-night stay. A
+// same-day check-in/check-out is still 1 night, not 0 (this function's own
+// pre-existing edge case, unaffected by this fix); check_out before
 // check_in (an invalid range) is not guarded here — validating that is a
 // schema/endpoint concern for STORY-019, not this pure-math function's job.
-// Delegates to the shared computeInclusiveDayCount (STORY-026 extracted it
-// once Session's start_date/end_date needed the identical formula).
 export const computeTotalDays = (checkIn: Date, checkOut: Date): number =>
-  computeInclusiveDayCount(checkIn, checkOut);
+  Math.max(Math.floor((checkOut.getTime() - checkIn.getTime()) / MS_PER_DAY), 1);
 
 // tariff × no_of_rooms × total_days, GST-inclusive at the flat
 // Accommodation rate above. totalDays is the caller's job to supply (this

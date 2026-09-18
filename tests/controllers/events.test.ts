@@ -352,7 +352,7 @@ describe('POST /events', () => {
       ]),
     );
     expect(response.body.accommodation.roomLines).toHaveLength(1);
-    expect(response.body.accommodation.totalDays).toBe(3);
+    expect(response.body.accommodation.totalDays).toBe(2);
 
     const stored = await Event.findById(response.body.id);
     expect(stored?.sessions).toHaveLength(1);
@@ -1307,13 +1307,16 @@ describe('PATCH /events/:id/accommodation', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.body.totalDays).toBe(2);
+    // check_in/check_out are 1 calendar day apart — 1 night stayed
+    // (STORY-070's own fix; not the "+1" inclusive-day count Session's own
+    // duration uses).
+    expect(response.body.totalDays).toBe(1);
     expect(response.body.totalOccupancy).toBe(8); // (2*2) + (4*1)
-    // Double: 5000*2 rooms*2 days*1.05=21000; Suite: 12000*1 room*2 days*1.05=25200; sum=46200.
-    expect(response.body.totalCharges).toBe(46200);
+    // Double: 5000*2 rooms*1 day*1.05=10500; Suite: 12000*1 room*1 day*1.05=12600; sum=23100.
+    expect(response.body.totalCharges).toBe(23100);
     expect(response.body.roomLines).toEqual([
-      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2, totalInclGst: 21000 },
-      { roomType: 'Suite', occupancy: 4, tariff: 12000, noOfRooms: 1, totalInclGst: 25200 },
+      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2, totalInclGst: 10500 },
+      { roomType: 'Suite', occupancy: 4, tariff: 12000, noOfRooms: 1, totalInclGst: 12600 },
     ]);
   });
 

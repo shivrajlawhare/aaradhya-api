@@ -8,24 +8,24 @@ import {
 } from '../../src/services/accommodation.js';
 
 describe('computeTotalDays', () => {
-  it('counts a same-day stay as 1 day, not 0', () => {
+  it('counts a same-day stay as 1 night, not 0', () => {
     const day = new Date('2026-06-15T00:00:00.000Z');
 
     expect(computeTotalDays(day, day)).toBe(1);
   });
 
-  it('counts one calendar day apart as 2 days', () => {
+  it('counts one calendar day apart as 1 night', () => {
     const checkIn = new Date('2026-06-15T00:00:00.000Z');
     const checkOut = new Date('2026-06-16T00:00:00.000Z');
 
-    expect(computeTotalDays(checkIn, checkOut)).toBe(2);
+    expect(computeTotalDays(checkIn, checkOut)).toBe(1);
   });
 
   it('counts a multi-day span against exact expected values', () => {
     const checkIn = new Date('2026-06-15T00:00:00.000Z');
     const checkOut = new Date('2026-06-20T00:00:00.000Z');
 
-    expect(computeTotalDays(checkIn, checkOut)).toBe(6);
+    expect(computeTotalDays(checkIn, checkOut)).toBe(5);
   });
 
   it('ignores the time-of-day component, using whole calendar days', () => {
@@ -34,8 +34,18 @@ describe('computeTotalDays', () => {
 
     // 4 hours apart in wall-clock time, but crosses one calendar-day
     // boundary at UTC — total_days counts elapsed 24h periods, not
-    // calendar-date labels, so this is still 1 day (< 24h elapsed).
+    // calendar-date labels, so this is still 1 night (< 24h elapsed,
+    // clamped to the minimum).
     expect(computeTotalDays(checkIn, checkOut)).toBe(1);
+  });
+
+  // STORY-070 — this exact pair is what exposed the previous formula's bug:
+  // computeInclusiveDayCount's "+1" returned 3 here, but both reference
+  // quotations print "Total Days: 2" for a 2-calendar-day check-in/check-out
+  // gap (docs/example_quatations, aaradhya-api repo).
+  it('reproduces both reference quotations’ exact printed Total Days for their own check-in/check-out pairs', () => {
+    expect(computeTotalDays(new Date('2026-12-10T00:00:00.000Z'), new Date('2026-12-12T00:00:00.000Z'))).toBe(2);
+    expect(computeTotalDays(new Date('2027-02-25T00:00:00.000Z'), new Date('2027-02-27T00:00:00.000Z'))).toBe(2);
   });
 });
 
