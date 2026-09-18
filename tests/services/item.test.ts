@@ -21,4 +21,13 @@ describe('computeTotalCost', () => {
   it('rounds to the nearest currency unit for a larger decimal multiplication', () => {
     expect(computeTotalCost({ pax: 7, costPerPlate: 142.857 })).toBe(1000);
   });
+
+  it('fixes pax at 1 when limited_seating is set, ignoring the literal headcount', () => {
+    expect(computeTotalCost({ pax: 200, costPerPlate: 500, limitedSeating: true })).toBe(500);
+  });
+
+  it('uses the literal pax when limited_seating is false or omitted', () => {
+    expect(computeTotalCost({ pax: 100, costPerPlate: 500, limitedSeating: false })).toBe(50000);
+    expect(computeTotalCost({ pax: 100, costPerPlate: 500 })).toBe(50000);
+  });
 });

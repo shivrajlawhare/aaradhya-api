@@ -19,6 +19,7 @@ export interface VisibilityItem {
   mealName: string | null;
   pax: number | null;
   costPerPlate?: number | null;
+  limitedSeating: boolean | null;
   menuItems: string[];
   eventName: string | null;
   venue: string | null;

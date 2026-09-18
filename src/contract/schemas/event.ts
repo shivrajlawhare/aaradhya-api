@@ -263,6 +263,10 @@ const mealItemBodySchema = z.object({
   mealName: z.string().trim().min(1),
   pax: z.number().min(0),
   costPerPlate: z.number().min(0),
+  // Glossary's "Limited Seating (L.S.)" — defaults false (models/event.ts)
+  // when omitted, same "not sent means not set" convention every other
+  // optional boolean-ish field on this endpoint already uses.
+  limitedSeating: z.boolean().optional(),
   menuItems: z.array(menuItemRefInputSchema).optional(),
   startTime: z.string().trim().min(1).optional(),
   endTime: z.string().trim().min(1).optional(),
@@ -290,6 +294,7 @@ export const updateItemBodySchema = z.object({
   mealName: z.string().trim().min(1).optional(),
   pax: z.number().min(0).optional(),
   costPerPlate: z.number().min(0).optional(),
+  limitedSeating: z.boolean().optional(),
   menuItems: z.array(menuItemRefInputSchema).optional(),
   eventName: z.string().trim().min(1).optional(),
   venue: z.string().trim().min(1).optional(),
@@ -317,6 +322,7 @@ export const itemResultSchema = z.object({
   mealName: z.string().nullable(),
   pax: z.number().nullable(),
   costPerPlate: z.number().nullable(),
+  limitedSeating: z.boolean().nullable(),
   menuItems: z.array(z.string()),
   eventName: z.string().nullable(),
   venue: z.string().nullable(),

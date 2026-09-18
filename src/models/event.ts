@@ -174,6 +174,13 @@ export interface ItemAttributes {
   mealName?: string;
   pax?: number;
   costPerPlate?: number;
+  // Meal-only (Glossary's "Limited Seating (L.S.)" entry) — when set, the
+  // Quotation prints Pax as `L.S. (Npax)` and every cost computation that
+  // reads this Item's pax (computeTotalCost, computeTotalCostSummary) uses
+  // 1 instead of the literal headcount (FR-QUO-8). Left undefined (not a
+  // stored `false`) on an Event Item, same "meaningless, not invalid, on
+  // that variant" convention pax/costPerPlate already follow.
+  limitedSeating?: boolean;
   // References into the shared Menu Item master list (STORY-030) — every
   // id here is validated as an existing MenuItem at the endpoint layer
   // (STORY-032's controller), not via a schema-level `validate` the way
@@ -350,6 +357,15 @@ const itemSchema = new Schema<ItemAttributes>({
   // to 0, not an error.
   pax: { type: Number, min: 0, required: requiredForItemType(ItemType.Meal) },
   costPerPlate: { type: Number, min: 0, required: requiredForItemType(ItemType.Meal) },
+  // No schema-level default (unlike, say, sessionSetup's booleans) — a
+  // Mongoose default runs unconditionally regardless of `type`, which would
+  // leave an Event Item reading `false` instead of `undefined`/null the
+  // same way its unrelated pax/costPerPlate already read null (this field
+  // truly doesn't apply there). "Defaults to false when omitted" is instead
+  // applied explicitly, Meal-branch-only, in createItem (controllers/
+  // events.ts) — same reasoning mealName/pax/costPerPlate are only ever
+  // set from that same branch.
+  limitedSeating: { type: Boolean },
   menuItems: { type: [{ type: Schema.Types.ObjectId, ref: 'MenuItem' }], default: [] },
   eventName: { type: String, trim: true, required: requiredForItemType(ItemType.Event) },
   venue: { type: String, trim: true, required: requiredForItemType(ItemType.Event) },

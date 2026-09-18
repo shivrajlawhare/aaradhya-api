@@ -112,4 +112,14 @@ describe('computeTotalCostSummary', () => {
 
     expect(summary.foodTotalInclGst).toBe(118);
   });
+
+  it('fixes pax at 1 for a limited_seating Meal Item, per FR-QUO-8/9', () => {
+    const summary = computeTotalCostSummary({
+      sessions: [{ venueCost: 0, items: [{ type: ItemType.Meal, pax: 200, costPerPlate: 500, limitedSeating: true }] }],
+      gstRatePercent: 0,
+    });
+
+    // Not 200 × 500 = 100000 — the literal headcount is ignored.
+    expect(summary.foodSubtotal).toBe(500);
+  });
 });

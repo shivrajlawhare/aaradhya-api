@@ -7,6 +7,7 @@ export interface QuotationItemInput {
   type: ItemType;
   pax?: number;
   costPerPlate?: number;
+  limitedSeating?: boolean;
 }
 
 export interface QuotationSessionInput {
@@ -69,7 +70,12 @@ const sumFoodSubtotal = (sessions: QuotationSessionInput[]): number =>
         total +
         session.items
           .filter((item) => item.type === ItemType.Meal)
-          .reduce((itemTotal, item) => itemTotal + computeTotalCost({ pax: item.pax ?? 0, costPerPlate: item.costPerPlate ?? 0 }), 0),
+          .reduce(
+            (itemTotal, item) =>
+              itemTotal +
+              computeTotalCost({ pax: item.pax ?? 0, costPerPlate: item.costPerPlate ?? 0, limitedSeating: item.limitedSeating }),
+            0,
+          ),
       0,
     ),
   );

@@ -200,6 +200,7 @@ const toPublicItem = (item: ItemSubdocument) => ({
   mealName: item.mealName ?? null,
   pax: item.pax ?? null,
   costPerPlate: item.costPerPlate ?? null,
+  limitedSeating: item.limitedSeating ?? null,
   menuItems: item.menuItems.map((ref) => ref.toString()),
   eventName: item.eventName ?? null,
   venue: item.venue ?? null,
@@ -207,7 +208,7 @@ const toPublicItem = (item: ItemSubdocument) => ({
   endTime: item.endTime ?? null,
   totalCost:
     item.pax !== undefined && item.costPerPlate !== undefined
-      ? computeTotalCost({ pax: item.pax, costPerPlate: item.costPerPlate })
+      ? computeTotalCost({ pax: item.pax, costPerPlate: item.costPerPlate, limitedSeating: item.limitedSeating })
       : null,
 });
 
@@ -876,7 +877,12 @@ const computeEventQuotationSummary = (event: EventDocument) =>
       .filter((session) => session.sessionStatus === SessionStatus.Active)
       .map((session) => ({
         venueCost: session.venueCost,
-        items: session.items.map((item) => ({ type: item.type, pax: item.pax, costPerPlate: item.costPerPlate })),
+        items: session.items.map((item) => ({
+          type: item.type,
+          pax: item.pax,
+          costPerPlate: item.costPerPlate,
+          limitedSeating: item.limitedSeating,
+        })),
       })),
     accommodationTotalCharges: computeTotalCharges(event.accommodation?.roomLines ?? []),
     extras: event.extras,
@@ -1325,6 +1331,7 @@ export const createItem: AppRouteMutationImplementation<typeof contract.createIt
           mealName: body.mealName,
           pax: body.pax,
           costPerPlate: body.costPerPlate,
+          limitedSeating: body.limitedSeating ?? false,
           menuItems: menuItemIds,
           startTime: body.startTime,
           endTime: body.endTime,
@@ -1379,6 +1386,14 @@ const applyItemUpdate = async (
       newValue: body.costPerPlate,
     });
     item.costPerPlate = body.costPerPlate;
+  }
+  if (body.limitedSeating !== undefined && body.limitedSeating !== item.limitedSeating) {
+    changes.push({
+      field: `${prefix}.limitedSeating`,
+      oldValue: item.limitedSeating ?? false,
+      newValue: body.limitedSeating,
+    });
+    item.limitedSeating = body.limitedSeating;
   }
   if (body.eventName !== undefined && body.eventName !== item.eventName) {
     changes.push({ field: `${prefix}.eventName`, oldValue: item.eventName ?? null, newValue: body.eventName });

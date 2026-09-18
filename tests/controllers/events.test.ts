@@ -2595,6 +2595,32 @@ describe('POST /events/:id/sessions/:sid/items', () => {
     });
   });
 
+  it('defaults limited_seating to false when omitted, using the literal pax for total_cost', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    const response = await postItemAs(token, eventId, sessionId, validMealItemPayload());
+
+    expect(response.body.limitedSeating).toBe(false);
+    expect(response.body.totalCost).toBe(50000);
+  });
+
+  it('a limited_seating Meal Item computes total_cost as cost_per_plate alone, ignoring pax', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    const response = await postItemAs(
+      token,
+      eventId,
+      sessionId,
+      validMealItemPayload({ pax: 200, costPerPlate: 500, limitedSeating: true }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body.limitedSeating).toBe(true);
+    expect(response.body.totalCost).toBe(500);
+  });
+
   it('creates an Event Item, with pax/cost_per_plate/total_cost reading null', async () => {
     const { token } = await seedCaller();
     const { eventId, sessionId } = await seedEventWithSession(token);
@@ -2608,6 +2634,7 @@ describe('POST /events/:id/sessions/:sid/items', () => {
       venue: 'Lawn',
       pax: null,
       costPerPlate: null,
+      limitedSeating: null,
       totalCost: null,
     });
   });
