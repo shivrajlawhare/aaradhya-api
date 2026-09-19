@@ -21,19 +21,22 @@ import {
   type SessionSetupAttributes,
 } from '../models/event.js';
 import { MenuItem, type MenuItemDocument } from '../models/menu-item.js';
+import { User } from '../models/user.js';
 import {
   computeRoomLineTotalInclGst,
   computeTotalCharges,
   computeTotalDays,
   computeTotalOccupancy,
 } from '../services/accommodation.js';
+import { renderPdfFromUrl } from '../services/browser-pdf.js';
 import { logChange } from '../services/change-log.js';
 import { filterEventForRole } from '../services/event-visibility.js';
 import { computeTotalCost } from '../services/item.js';
 import { computeBalance } from '../services/payment.js';
 import { computeTotalCostSummary } from '../services/quotation.js';
-import { renderQuotationPdf } from '../services/quotation-pdf.js';
 import { computeDurationDays, computeIsMultiDay, computeMonthRange, sessionOverlapsMonth } from '../services/session.js';
+import { signSessionToken } from '../services/token.js';
+import { config } from '../config.js';
 import { isDuplicateKeyError } from '../utils/mongo-errors.js';
 import { escapeRegExp } from '../utils/regex.js';
 
@@ -1032,43 +1035,42 @@ export const getQuotationSummary: AppRouteQueryImplementation<typeof contract.ge
 // own filter: its cost isn't counted in the Total Cost Summary, so showing
 // it as a real scheduled item to the client in the same document would be
 // inconsistent.
+// Drives a real, headless browser against aaradhya-web's own already-
+// running quotation-preview page (services/browser-pdf.ts) rather than a
+// second, hand-duplicated PDF template — this is the ONLY way the
+// generated PDF stays byte-for-byte the same as QuotationDocument (STORY-
+// 069 through STORY-073's fixed reproduction of the reference quotations)
+// without two templates silently drifting apart. Supersedes the previous
+// pdfkit-based plain-text renderer (services/quotation-pdf.ts, now
+// deleted), which never reproduced any of that fidelity work and was the
+// actual cause of a shared/downloaded Quotation losing all its layout.
+// `?print=1` on that route (quotation-preview-page.tsx) skips the
+// editable-looking extras panel and the "Share PDF" button itself, so
+// neither ends up baked into the downloaded document.
 export const getQuotationPdf: AppRouteQueryImplementation<typeof contract.getQuotationPdf> = async ({
   params,
+  req,
   res,
 }) => {
   const event = await Event.findById(params.id);
   if (!event) {
     return eventNotFound;
   }
+  if (!req.user) {
+    // Unreachable — eventManagerOnly (router.ts) runs authenticate before
+    // this handler ever does; guarded instead of asserted past.
+    throw new Error('getQuotationPdf handler ran without an authenticated user.');
+  }
 
-  const activeSessions = event.sessions.filter((session) => session.sessionStatus === SessionStatus.Active);
-  const pdf = await renderQuotationPdf({
-    eventId: event.eventId,
-    eventFamilyType: event.eventFamilyType,
-    clientContacts: event.clientContacts.map((contact) => ({
-      name: contact.name,
-      contactNumber: contact.contactNumber,
-      role: contact.role,
-    })),
-    sessions: activeSessions.map((session) => ({
-      sessionType: session.sessionType,
-      venue: session.venue,
-      venueCost: session.venueCost,
-      startDate: session.startDate,
-      endDate: session.endDate,
-      // Reuses toPublicItem's own totalCost computation rather than
-      // recomputing pax × cost_per_plate a second time here.
-      items: session.items.map(toPublicItem).map((item) => ({
-        type: item.type,
-        mealName: item.mealName,
-        eventName: item.eventName,
-        pax: item.pax,
-        costPerPlate: item.costPerPlate,
-        totalCost: item.totalCost,
-      })),
-    })),
-    accommodation: toPublicAccommodation(event.accommodation),
-    summary: computeEventQuotationSummary(event),
+  // The headless browser has no real login session of its own — this
+  // mints one for the SAME already-authenticated caller and injects it
+  // into the target page's own localStorage (browser-pdf.ts), the exact
+  // mechanism aaradhya-web's own api/client.ts reads a session from.
+  const caller = await User.findById(req.user.id);
+  const token = await signSessionToken({ id: req.user.id, role: req.user.role });
+  const pdf = await renderPdfFromUrl(config.webAppUrl, `/events/${event.id}/quotation-preview?print=1`, {
+    token,
+    user: { id: req.user.id, name: caller?.name ?? 'Aaradhya', role: req.user.role },
   });
 
   // No caching of a stale render (this story's own AC) — every call is a

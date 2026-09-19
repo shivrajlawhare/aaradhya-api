@@ -1,21 +1,26 @@
-import { PDFParse } from 'pdf-parse';
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app.js';
+import { config } from '../../src/config.js';
 import { ChangeLogEntry } from '../../src/models/change-log-entry.js';
 import { ClientContactRole, Event, EventStatus } from '../../src/models/event.js';
 import { Role, User } from '../../src/models/user.js';
 import { signSessionToken } from '../../src/services/token.js';
 import { clearCollections, connectTestDb, disconnectTestDb } from '../support/db.js';
 
-const app = createApp();
+// GET /events/:id/quotation.pdf drives a real headless browser against
+// aaradhya-web's own running app (services/browser-pdf.ts) — mocked here
+// so this suite verifies the controller's own contract (which URL/session
+// it asks browser-pdf.ts to render, how it maps a render result/failure to
+// a response) without needing a live frontend server or a real browser in
+// this test process. The render function's own correctness (does Playwright
+// actually work) is covered by tests/services/browser-pdf.test.ts instead.
+vi.mock('../../src/services/browser-pdf.js', () => ({
+  renderPdfFromUrl: vi.fn(),
+}));
+import { renderPdfFromUrl } from '../../src/services/browser-pdf.js';
 
-const extractPdfText = async (pdf: Buffer): Promise<string> => {
-  const parser = new PDFParse({ data: pdf });
-  const result = await parser.getText();
-  await parser.destroy();
-  return result.text;
-};
+const app = createApp();
 
 const seedCaller = async (role: Role = Role.EventManager) => {
   const caller = await User.create({
@@ -2172,108 +2177,64 @@ describe('GET /events/:id/quotation.pdf', () => {
     expect(response.status).toBe(400);
   });
 
-  it('returns a non-empty application/pdf byte stream with a no-store Cache-Control header', async () => {
+  describe('when renderPdfFromUrl resolves (mocked — its own real behavior is covered by tests/services/browser-pdf.test.ts)', () => {
+    const mockPdfBuffer = Buffer.from('%PDF-mock-quotation-pdf');
+
+    beforeEach(() => {
+      vi.mocked(renderPdfFromUrl).mockReset();
+      vi.mocked(renderPdfFromUrl).mockResolvedValue(mockPdfBuffer);
+    });
+
+    it('returns the rendered PDF buffer with a no-store Cache-Control header', async () => {
+      const { token } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(token, validPayload(manager.id));
+
+      const response = await getQuotationPdfAs(token, created.body.id);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('application/pdf');
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(Buffer.isBuffer(response.body)).toBe(true);
+      expect(Buffer.compare(response.body, mockPdfBuffer)).toBe(0);
+    });
+
+    it('drives the headless browser to this exact Event\'s own print-mode quotation-preview URL', async () => {
+      const { token } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(token, validPayload(manager.id));
+
+      await getQuotationPdfAs(token, created.body.id);
+
+      expect(renderPdfFromUrl).toHaveBeenCalledWith(
+        config.webAppUrl,
+        `/events/${created.body.id}/quotation-preview?print=1`,
+        expect.objectContaining({ token: expect.any(String) }),
+      );
+    });
+
+    it('mints a session for the SAME authenticated caller, not the Event\'s own assigned manager', async () => {
+      const { caller, token } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(token, validPayload(manager.id));
+
+      await getQuotationPdfAs(token, created.body.id);
+
+      const [, , session] = vi.mocked(renderPdfFromUrl).mock.calls[0]!;
+      expect(session).toMatchObject({ user: { id: caller.id, name: caller.name, role: caller.role } });
+    });
+  });
+
+  it('propagates a render failure as a 500 rather than silently returning an empty PDF', async () => {
+    vi.mocked(renderPdfFromUrl).mockReset();
+    vi.mocked(renderPdfFromUrl).mockRejectedValueOnce(new Error('browser crashed'));
     const { token } = await seedCaller();
     const manager = await seedEventManager();
     const created = await createEventAs(token, validPayload(manager.id));
 
     const response = await getQuotationPdfAs(token, created.body.id);
 
-    expect(response.status).toBe(200);
-    expect(response.headers['content-type']).toContain('application/pdf');
-    expect(response.headers['cache-control']).toBe('no-store');
-    expect(Buffer.isBuffer(response.body)).toBe(true);
-    expect(response.body.length).toBeGreaterThan(0);
-  });
-
-  it('includes the client names, a session venue, and the live computed grand total in the PDF text', async () => {
-    const { token } = await seedCaller();
-    const manager = await seedEventManager();
-    const created = await createEventAs(
-      token,
-      validPayload(manager.id, {
-        clientContacts: [{ name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' }],
-      }),
-    );
-    const eventId = created.body.id;
-    await postSessionAs(token, eventId, validSessionPayload({ venue: 'Lawn', venueCost: 5000 }));
-
-    const response = await getQuotationPdfAs(token, eventId);
-    const text = await extractPdfText(response.body);
-
-    // venueTotal = 5000, no items/accommodation/extras -> grandTotal = 5000.
-    expect(text).toContain('Priya Nair');
-    expect(text).toContain('Lawn');
-    expect(text).toContain('5000');
-  });
-
-  it('regenerating after an edit reflects the updated numbers — no caching of a stale render', async () => {
-    const { token } = await seedCaller();
-    const manager = await seedEventManager();
-    const created = await createEventAs(token, validPayload(manager.id));
-    const eventId = created.body.id;
-    const session = await postSessionAs(token, eventId, validSessionPayload({ venueCost: 5000 }));
-    const item = await postItemAs(token, eventId, session.body.id, validMealItemPayload({ pax: 10, costPerPlate: 200 }));
-
-    const before = await getQuotationPdfAs(token, eventId);
-    const textBefore = await extractPdfText(before.body);
-    expect(textBefore).toContain('10 pax');
-
-    await patchItemAs(token, eventId, session.body.id, item.body.id, { pax: 40 });
-
-    const after = await getQuotationPdfAs(token, eventId);
-    const textAfter = await extractPdfText(after.body);
-
-    expect(textAfter).toContain('40 pax');
-    expect(textAfter).not.toContain('10 pax');
-  });
-
-  it('renders a Session with zero Items without a broken/empty table', async () => {
-    const { token } = await seedCaller();
-    const manager = await seedEventManager();
-    const created = await createEventAs(token, validPayload(manager.id));
-    await postSessionAs(token, created.body.id, validSessionPayload());
-
-    const response = await getQuotationPdfAs(token, created.body.id);
-
-    expect(response.status).toBe(200);
-    const text = await extractPdfText(response.body);
-    expect(text).toContain('No Meal Items added yet.');
-  });
-
-  it('renders a very long custom venue name without crashing (wraps, per this story\'s edge case)', async () => {
-    const { token } = await seedCaller();
-    const manager = await seedEventManager();
-    const created = await createEventAs(token, validPayload(manager.id));
-    const longVenue = 'B'.repeat(300);
-    await postSessionAs(token, created.body.id, validSessionPayload({ venue: longVenue }));
-
-    const response = await getQuotationPdfAs(token, created.body.id);
-
-    expect(response.status).toBe(200);
-    const text = await extractPdfText(response.body);
-    expect(text.replace(/\s+/g, '')).toContain(longVenue);
-  });
-
-  it('renders an identical static T&C/Documents/Bank footer across two different Events', async () => {
-    const { token } = await seedCaller();
-    const managerA = await seedEventManager();
-    const managerB = await seedEventManager();
-    const eventA = await createEventAs(token, validPayload(managerA.id));
-    const eventB = await createEventAs(
-      token,
-      validPayload(managerB.id, {
-        clientContacts: [{ name: 'Someone Else', contactNumber: '9000000000', role: 'Groom' }],
-      }),
-    );
-
-    const responseA = await getQuotationPdfAs(token, eventA.body.id);
-    const responseB = await getQuotationPdfAs(token, eventB.body.id);
-    const textA = await extractPdfText(responseA.body);
-    const textB = await extractPdfText(responseB.body);
-
-    const footerStart = 'Terms & Conditions';
-    expect(textA.slice(textA.indexOf(footerStart))).toEqual(textB.slice(textB.indexOf(footerStart)));
+    expect(response.status).toBe(500);
   });
 });
 

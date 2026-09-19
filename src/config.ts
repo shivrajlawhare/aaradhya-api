@@ -26,6 +26,12 @@ export const config = {
   corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
     .split(',')
     .map((origin) => origin.trim()),
+  // aaradhya-web's own origin — services/browser-pdf.ts navigates a
+  // headless browser here to render the Quotation PDF from the real,
+  // already-running frontend app (Aaradhya_Quotation_PDF_Strategy.md §4),
+  // not a second server-side copy of its render tree. Same default as
+  // corsOrigins' own first entry (Vite's dev-server port).
+  webAppUrl: process.env.WEB_APP_URL ?? 'http://localhost:5173',
   // The single organization-wide GST rate (SRS Assumption A9) applied to
   // Accommodation room-line totals (STORY-018) and, later, the Quotation
   // summary. A percentage, e.g. 18 means 18%, not tax-per-room-type slabs.
