@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { objectIdSchema } from './common.js';
 
 // Optional — an empty/omitted search returns the full list (this story's
 // own edge case, decided as: no query means no filter, not a 400 — matches
@@ -22,4 +23,19 @@ export const menuItemResultSchema = z.object({
   defaultCostPerPlate: z.number(),
   createdAt: z.date(),
   updatedAt: z.date(),
+});
+
+// Both fields independently optional — a caller may rename, re-cost, or
+// both in one request (same "PATCH semantics" shape updateVenueBodySchema
+// already uses). No `active` here — unlike Venue/EventType/RoomType, the
+// MenuItem model has never had one (settings-sections.ts's own comment);
+// editing a Menu Item's name/cost is a genuinely separate capability from
+// deactivating one, not a smaller version of it.
+export const updateMenuItemBodySchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  defaultCostPerPlate: z.number().min(0).optional(),
+});
+
+export const menuItemIdParamsSchema = z.object({
+  id: objectIdSchema('Invalid menu item id.'),
 });

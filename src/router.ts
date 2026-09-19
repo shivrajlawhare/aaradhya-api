@@ -25,7 +25,7 @@ import {
 } from './controllers/events.js';
 import { createEventType, listEventTypes, updateEventType } from './controllers/event-types.js';
 import { checkHealth } from './controllers/health.js';
-import { createMenuItem, listMenuItems } from './controllers/menu-items.js';
+import { createMenuItem, listMenuItems, updateMenuItem } from './controllers/menu-items.js';
 import { createRoomType, listRoomTypes, updateRoomType } from './controllers/room-types.js';
 import { createUser, listEventManagers, listUsers, updateUser } from './controllers/users.js';
 import { createVenue, listVenues, updateVenue } from './controllers/venues.js';
@@ -125,6 +125,10 @@ export const router = server.router(contract, {
   createMenuItem: {
     middleware: authenticatedOnly,
     handler: createMenuItem,
+  },
+  updateMenuItem: {
+    middleware: authenticatedOnly,
+    handler: updateMenuItem,
   },
   createItem: {
     middleware: eventManagerOnly,

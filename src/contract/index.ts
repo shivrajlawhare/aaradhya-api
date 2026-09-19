@@ -34,7 +34,9 @@ import {
 import {
   createMenuItemBodySchema,
   listMenuItemsQuerySchema,
+  menuItemIdParamsSchema,
   menuItemResultSchema,
+  updateMenuItemBodySchema,
 } from './schemas/menu-item.js';
 import {
   createEventTypeBodySchema,
@@ -324,6 +326,22 @@ export const contract = c.router({
       409: apiErrorSchema,
     },
     summary: 'Add a Menu Item to the shared master list (any authenticated caller)',
+  },
+  updateMenuItem: {
+    method: 'PATCH',
+    path: '/menu-items/:id',
+    pathParams: menuItemIdParamsSchema,
+    body: updateMenuItemBodySchema,
+    responses: {
+      200: menuItemResultSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    // Same authenticatedOnly reasoning as createMenuItem above (this
+    // route's own sibling) — the master list "grows organically" from any
+    // manager's entry, not gated by role; no `active` field exists on this
+    // model to toggle here (settings-sections.ts's own comment).
+    summary: 'Edit name/default cost on a Menu Item (any authenticated caller)',
   },
   createItem: {
     method: 'POST',

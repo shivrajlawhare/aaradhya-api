@@ -27,6 +27,9 @@ const listMenuItemsAs = (token: string, search?: string) =>
 const createMenuItemAs = (token: string, body: object) =>
   request(app).post('/menu-items').set('Authorization', `Bearer ${token}`).send(body);
 
+const updateMenuItemAs = (token: string, id: string, body: object) =>
+  request(app).patch(`/menu-items/${id}`).set('Authorization', `Bearer ${token}`).send(body);
+
 beforeAll(async () => {
   await connectTestDb();
   await MenuItem.init();
@@ -175,6 +178,92 @@ describe('POST /menu-items', () => {
     const token = await seedCaller();
 
     const response = await createMenuItemAs(token, { name: 'Paneer Tikka', defaultCostPerPlate: -1 });
+
+    expect(response.status).toBe(400);
+  });
+});
+
+describe('PATCH /menu-items/:id', () => {
+  it('returns 401 with no token', async () => {
+    const item = await MenuItem.create({ name: 'Paneer Tikka' });
+
+    const response = await request(app).patch(`/menu-items/${item.id}`).send({ name: 'Renamed' });
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'allows a caller with role %s — editing is not gated to EventManager',
+    async (role) => {
+      const item = await MenuItem.create({ name: 'Paneer Tikka' });
+      const token = await seedCaller(role);
+
+      const response = await updateMenuItemAs(token, item.id, { name: 'Paneer Tikka Renamed' });
+
+      expect(response.status).toBe(200);
+    },
+  );
+
+  it('edits name and default_cost_per_plate, returning the updated document', async () => {
+    const token = await seedCaller();
+    const item = await MenuItem.create({ name: 'Paneer Tikka', defaultCostPerPlate: 250 });
+
+    const response = await updateMenuItemAs(token, item.id, { name: 'Paneer Butter Masala', defaultCostPerPlate: 300 });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ name: 'Paneer Butter Masala', defaultCostPerPlate: 300 });
+
+    const stored = await MenuItem.findById(item.id);
+    expect(stored?.name).toBe('Paneer Butter Masala');
+    expect(stored?.defaultCostPerPlate).toBe(300);
+  });
+
+  it('edits only the field sent, leaving the other unchanged (PATCH semantics)', async () => {
+    const token = await seedCaller();
+    const item = await MenuItem.create({ name: 'Paneer Tikka', defaultCostPerPlate: 250 });
+
+    const response = await updateMenuItemAs(token, item.id, { defaultCostPerPlate: 300 });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ name: 'Paneer Tikka', defaultCostPerPlate: 300 });
+  });
+
+  it('returns 404 for a well-formed but nonexistent id', async () => {
+    const token = await seedCaller();
+
+    const response = await updateMenuItemAs(token, '507f1f77bcf86cd799439011', { name: 'Renamed' });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'MENU_ITEM_NOT_FOUND', message: 'No Menu Item with that id.' },
+    });
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const token = await seedCaller();
+
+    const response = await updateMenuItemAs(token, 'not-an-id', { name: 'Renamed' });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 409, without renaming, when the new name already exists on another Menu Item', async () => {
+    const token = await seedCaller();
+    await MenuItem.create({ name: 'Gulab Jamun' });
+    const item = await MenuItem.create({ name: 'Paneer Tikka' });
+
+    const response = await updateMenuItemAs(token, item.id, { name: 'Gulab Jamun' });
+
+    expect(response.status).toBe(409);
+    const stored = await MenuItem.findById(item.id);
+    expect(stored?.name).toBe('Paneer Tikka');
+  });
+
+  it('returns 400 for a negative default_cost_per_plate', async () => {
+    const token = await seedCaller();
+    const item = await MenuItem.create({ name: 'Paneer Tikka' });
+
+    const response = await updateMenuItemAs(token, item.id, { defaultCostPerPlate: -1 });
 
     expect(response.status).toBe(400);
   });
