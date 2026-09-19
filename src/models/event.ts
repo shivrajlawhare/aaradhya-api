@@ -259,6 +259,15 @@ export interface EventAttributes {
   // individually, only ever whole-array-replaces the list at creation time,
   // the same "no id exposed" precedent roomLines already established.
   extraLineItems: ManualLineItemAttributes[];
+  // STORY-072 — the Food Cost row's own GST rate for THIS Event's Total
+  // Cost Summary, defaulting to services/quotation.ts's own
+  // FOOD_GST_RATE_PERCENT (5) but overridable per-Event at creation time
+  // (SRS §4.9/Assumption A9: "editable per-quotation if it varies"). Stored
+  // rather than always reading the 5% default so a later fidelity check —
+  // or simply reopening an already-generated Quotation — recomputes the
+  // Food Cost with the SAME rate actually used for this Event, not
+  // whatever the org-wide default happens to be at read time.
+  foodGstRatePercent: number;
   // Typed as a DocumentArray (not plain SessionAttributes[], unlike
   // clientContacts/roomLines above) — STORY-027 is the first place a
   // Session's own generated sub-id needs to come back out, which needs
@@ -494,6 +503,11 @@ const eventSchema = new Schema<EventAttributes>(
     // sessions already document — a brand-new Event may have no manual line
     // items entered yet.
     extraLineItems: { type: [manualLineItemSchema], default: [] },
+    // Defaults to 5 (services/quotation.ts's own FOOD_GST_RATE_PERCENT) —
+    // not imported directly to avoid a models -> services dependency this
+    // codebase's layering has never had; kept in sync by comment, same as
+    // accommodationSchema's own room-line GST math already documents.
+    foodGstRatePercent: { type: Number, required: true, default: 5, min: 0 },
     // Zero or more at the schema level, same reasoning as clientContacts —
     // this story only defines the shape; an "at least one Session" rule (if
     // any) belongs to whichever later story adds the add/remove endpoint.

@@ -379,6 +379,30 @@ describe('Event model', () => {
     expect(event.payment.paymentMode).toBeUndefined();
   });
 
+  // STORY-072 — defaults to 5 (services/quotation.ts's own
+  // FOOD_GST_RATE_PERCENT), overridable per-Event (SRS §4.9's "editable...
+  // if it varies").
+  it('defaults foodGstRatePercent to 5, honoring an explicit override', async () => {
+    const manager = await createEventManager();
+
+    const defaulted = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+    });
+    expect(defaulted.foodGstRatePercent).toBe(5);
+
+    const overridden = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      foodGstRatePercent: 12,
+    });
+    expect(overridden.foodGstRatePercent).toBe(12);
+  });
+
   it('accepts a fully populated Payment Record', async () => {
     const manager = await createEventManager();
 

@@ -290,6 +290,7 @@ export const toPublicEvent = (event: EventDocument) => ({
   documentsChecklist: toPublicDocumentsChecklist(event.documentsChecklist),
   extras: toPublicExtras(event.extras),
   extraLineItems: toPublicExtraLineItems(event.extraLineItems),
+  foodGstRatePercent: event.foodGstRatePercent,
   sessions: event.sessions.map(toPublicSession),
   createdBy: event.createdBy.toString(),
   createdAt: event.createdAt,
@@ -422,6 +423,7 @@ export const createEvent: AppRouteMutationImplementation<typeof contract.createE
       accommodation: body.accommodation,
       extras: body.extras,
       extraLineItems: body.extraLineItems ?? [],
+      foodGstRatePercent: body.foodGstRatePercent,
       createdBy: req.user.id,
     });
     return { status: 201, body: toPublicEvent(event) };
@@ -546,6 +548,14 @@ const buildEventUpdate = (
       field: 'clientContacts',
       oldValue: existing.clientContacts.map(toPlainContact),
       newValue: body.clientContacts,
+    });
+  }
+  if (body.foodGstRatePercent !== undefined && body.foodGstRatePercent !== existing.foodGstRatePercent) {
+    update.foodGstRatePercent = body.foodGstRatePercent;
+    changes.push({
+      field: 'foodGstRatePercent',
+      oldValue: existing.foodGstRatePercent,
+      newValue: body.foodGstRatePercent,
     });
   }
 
@@ -999,6 +1009,10 @@ const computeEventQuotationSummary = (event: EventDocument) =>
       bhatji: event.extras.bhatji,
       extraLineItems: event.extraLineItems,
     },
+    // STORY-072 — the rate actually stored on THIS Event, not always the
+    // FOOD_GST_RATE_PERCENT default, so this rollup and the Quotation's own
+    // Total Cost Summary compute the identical Food Cost with GST.
+    gstRatePercent: event.foodGstRatePercent,
   });
 
 export const getQuotationSummary: AppRouteQueryImplementation<typeof contract.getQuotationSummary> = async ({

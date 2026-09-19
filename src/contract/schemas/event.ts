@@ -48,6 +48,10 @@ export const updateEventBodySchema = z.object({
   status: z.nativeEnum(EventStatus).optional(),
   eventManager: objectIdSchema('Invalid event_manager id.').optional(),
   clientContacts: z.array(clientContactInputSchema).min(1).optional(),
+  // STORY-072 — lets a caller correct the Food Cost GST rate after
+  // creation (SRS §4.9's "editable... if it varies"), reusing this
+  // existing top-level PATCH rather than a dedicated route for one field.
+  foodGstRatePercent: z.number().min(0).optional(),
 });
 
 export const clientContactResultSchema = z.object({
@@ -351,6 +355,10 @@ export const createEventBodySchema = z.object({
   accommodation: updateAccommodationBodySchema.optional(),
   extras: extrasFieldsSchema.optional(),
   extraLineItems: z.array(manualLineItemFieldsSchema).optional(),
+  // STORY-072 — defaults to 5 (services/quotation.ts's own
+  // FOOD_GST_RATE_PERCENT) when omitted, via the Mongoose schema's own
+  // default rather than repeating the literal here.
+  foodGstRatePercent: z.number().min(0).optional(),
 });
 
 // Every field optional (PATCH semantics) — a caller sends only what
@@ -456,6 +464,10 @@ export const eventResultSchema = z.object({
   extras: extrasResultSchema,
   // Added STORY-068 alongside extras, same reasoning.
   extraLineItems: z.array(manualLineItemResultSchema),
+  // Added STORY-072 — the Quotation's own Total Cost Summary needs the
+  // rate actually stored on this Event, not always the 5% default, to
+  // recompute the Food Cost row identically on every reopen.
+  foodGstRatePercent: z.number(),
   sessions: z.array(sessionResultSchema),
   createdBy: z.string(),
   createdAt: z.date(),
@@ -505,6 +517,11 @@ export const filteredEventResultSchema = eventResultSchema.extend({
   payment: paymentResultSchema.optional(),
   extras: extrasResultSchema.optional(),
   extraLineItems: z.array(manualLineItemResultSchema).optional(),
+  // Hidden for every non-EventManager role, same "money-adjacent figure"
+  // class as extras/extraLineItems above (event-visibility.ts's own
+  // filterEventForRole) — it only ever feeds the Quotation's own Total
+  // Cost Summary, an EventManager-only screen.
+  foodGstRatePercent: z.number().optional(),
   sessions: z.array(filteredSessionResultSchema),
 });
 

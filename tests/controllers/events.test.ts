@@ -192,6 +192,21 @@ describe('POST /events', () => {
     expect(response.body.status).toBe(EventStatus.Confirmed);
   });
 
+  // STORY-072 — defaults to 5 (services/quotation.ts's own
+  // FOOD_GST_RATE_PERCENT) via the Mongoose schema's own default when the
+  // caller doesn't supply one, and honors a caller-supplied override —
+  // same "defaults, but overridable" pattern the status test above covers.
+  it('defaults foodGstRatePercent to 5, honoring a caller-supplied override', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+
+    const defaulted = await createEventAs(token, validPayload(manager.id));
+    expect(defaulted.body.foodGstRatePercent).toBe(5);
+
+    const overridden = await createEventAs(token, validPayload(manager.id, { foodGstRatePercent: 12 }));
+    expect(overridden.body.foodGstRatePercent).toBe(12);
+  });
+
   it('sets created_by from the authenticated caller, ignoring any value in the body', async () => {
     const { caller, token } = await seedCaller();
     const manager = await seedEventManager();
@@ -1120,6 +1135,23 @@ describe('PATCH /events/:id', () => {
     expect(getResponse.body.status).toBe(EventStatus.Cancelled);
   });
 
+  // STORY-072 — SRS §4.9's "editable... if it varies" for the Food Cost
+  // GST rate, reusing this existing top-level PATCH rather than a
+  // dedicated route.
+  it('updates foodGstRatePercent, reflected on the next GET', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    expect(created.body.foodGstRatePercent).toBe(5);
+
+    const patchResponse = await patchEventAs(token, created.body.id, { foodGstRatePercent: 8 });
+    expect(patchResponse.status).toBe(200);
+    expect(patchResponse.body.foodGstRatePercent).toBe(8);
+
+    const getResponse = await getEventAs(token, created.body.id);
+    expect(getResponse.body.foodGstRatePercent).toBe(8);
+  });
+
   it('writes exactly one Change Log Entry with the correct field/oldValue/newValue for a single-field edit', async () => {
     const { caller, token } = await seedCaller();
     const manager = await seedEventManager();
@@ -2038,6 +2070,29 @@ describe('GET /events/:id/quotation-summary', () => {
       extrasTotal: 3000,
       grandTotal: 25385,
     });
+  });
+
+  // STORY-072 — a per-Event foodGstRatePercent (SRS §4.9's "editable...
+  // if it varies") must be the rate this rollup actually applies, not
+  // always the 5% default — same live-through-the-real-endpoint check as
+  // the test above, just with a non-default rate set at creation.
+  it('uses this Event’s own foodGstRatePercent, not the 5% default, for foodTotalInclGst/grandTotal', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id, { foodGstRatePercent: 10 }));
+    const eventId = created.body.id;
+
+    const session = await postSessionAs(token, eventId, validSessionPayload({ venueCost: 0 }));
+    await postItemAs(token, eventId, session.body.id, validMealItemPayload({ pax: 10, costPerPlate: 200 }));
+
+    const response = await getQuotationSummaryAs(token, eventId);
+
+    // foodSubtotal = 2000; foodTotalInclGst = 2000 × 1.10 = 2200 (not the
+    // 5%-default 2100) — grandTotal = 0 (venue) + 2200 + 0 (accommodation)
+    // + 0 (extras) = 2200.
+    expect(response.status).toBe(200);
+    expect(response.body.foodTotalInclGst).toBe(2200);
+    expect(response.body.grandTotal).toBe(2200);
   });
 
   it("reflects a Session's edited venue_cost immediately, with no separate stored quotation object", async () => {

@@ -104,6 +104,10 @@ export interface VisibilityEvent {
   documentsChecklist: VisibilityDocumentsChecklist;
   extras?: VisibilityExtras;
   extraLineItems?: VisibilityManualLineItem[];
+  // STORY-072 — same money-adjacent class as extras/extraLineItems above;
+  // it only ever feeds the Quotation's own Total Cost Summary, an
+  // EventManager-only screen.
+  foodGstRatePercent?: number;
   sessions: VisibilitySession[];
   createdBy: string;
   createdAt: Date;
@@ -168,6 +172,7 @@ export const filterEventForRole = (event: VisibilityEvent, role: Role): Visibili
     payment: undefined,
     extras: undefined,
     extraLineItems: undefined,
+    foodGstRatePercent: undefined,
     sessions: event.sessions.map((session) => filterSession(session, { canSeeSetup, canSeeMenu })),
   };
 };
