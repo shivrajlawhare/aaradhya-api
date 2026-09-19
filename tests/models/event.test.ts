@@ -745,12 +745,18 @@ describe('Event model', () => {
     },
   );
 
-  it.each(['eventName', 'venue'])('rejects an Event Item missing %s', async (field) => {
+  // STORY-071 — eventName/venue are no longer required on an Event Item:
+  // both reference quotations (docs/example_quatations/) print Ceremony
+  // Items with no venue at all, and one has a Ceremony Item with every
+  // field blank (a bare grey divider row on its own Event Details table),
+  // a real state the Quotation renderer must be able to reproduce.
+  // Supersedes this test's own previous "rejects...missing" expectation.
+  it.each(['eventName', 'venue'])('accepts an Event Item missing %s', async (field) => {
     const manager = await createEventManager();
     const item: Record<string, unknown> = { type: ItemType.Event, eventName: 'Muhurta', venue: 'Lawn' };
     delete item[field];
 
-    const error = await expectValidationError(Event, {
+    const event = await Event.create({
       eventFamilyType: 'Wedding',
       status: EventStatus.Tentative,
       eventManager: manager.id,
@@ -758,7 +764,30 @@ describe('Event model', () => {
       sessions: [{ ...validSession(), items: [item] }],
     });
 
-    expect(error.errors).toHaveProperty(`sessions.0.items.0.${field}`);
+    const savedItem = event.sessions[0]?.items[0];
+    if (field === 'eventName') {
+      expect(savedItem?.eventName).toBeUndefined();
+    } else {
+      expect(savedItem?.venue).toBeUndefined();
+    }
+  });
+
+  it('accepts an Event Item with every field left blank', async () => {
+    const manager = await createEventManager();
+
+    const event = await Event.create({
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [{ ...validSession(), items: [{ type: ItemType.Event, menuItems: [] }] }],
+    });
+
+    expect(event.sessions[0]?.items[0]).toMatchObject({ type: ItemType.Event });
+    expect(event.sessions[0]?.items[0]?.eventName).toBeUndefined();
+    expect(event.sessions[0]?.items[0]?.venue).toBeUndefined();
+    expect(event.sessions[0]?.items[0]?.startTime).toBeUndefined();
+    expect(event.sessions[0]?.items[0]?.endTime).toBeUndefined();
   });
 
   it('does not require mealName/pax/costPerPlate on an Event Item', async () => {

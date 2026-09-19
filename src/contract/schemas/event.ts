@@ -277,10 +277,19 @@ const mealItemBodySchema = z.object({
   endTime: z.string().trim().min(1).optional(),
 });
 
+// STORY-071 — eventName/venue relaxed from required (min(1)) to fully
+// optional: both reference quotations (docs/example_quatations/) print
+// Ceremony/Event Items with no venue at all ("Muhurta 11am – 12.30pm"), and
+// example_quatation_2.pdf has one Ceremony Item with EVERY field left blank
+// (a bare grey divider row in its own Event Details table) — a real,
+// intentional state the Quotation renderer must reproduce, not an
+// impossible one the schema should keep rejecting. No change to Meal's own
+// mealItemBodySchema — a Meal Item's own mealName/pax/costPerPlate stay
+// required, since neither reference quotation has a blank Food/Dining row.
 const eventItemBodySchema = z.object({
   type: z.literal(ItemType.Event),
-  eventName: z.string().trim().min(1),
-  venue: z.string().trim().min(1),
+  eventName: z.string().trim().optional(),
+  venue: z.string().trim().optional(),
   startTime: z.string().trim().min(1).optional(),
   endTime: z.string().trim().min(1).optional(),
 });
@@ -347,14 +356,17 @@ export const createEventBodySchema = z.object({
 // Every field optional (PATCH semantics) — a caller sends only what
 // changed. No `type` here: switching an Item between Meal/Event isn't
 // something this story's AC asks for, so it isn't offered.
+// eventName/venue no longer require min(1) (STORY-071, same reasoning as
+// eventItemBodySchema above) — an explicit "" is a legitimate way to clear
+// a previously-set value back to blank, not a rejected edit.
 export const updateItemBodySchema = z.object({
   mealName: z.string().trim().min(1).optional(),
   pax: z.number().min(0).optional(),
   costPerPlate: z.number().min(0).optional(),
   limitedSeating: z.boolean().optional(),
   menuItems: z.array(menuItemRefInputSchema).optional(),
-  eventName: z.string().trim().min(1).optional(),
-  venue: z.string().trim().min(1).optional(),
+  eventName: z.string().trim().optional(),
+  venue: z.string().trim().optional(),
   startTime: z.string().trim().min(1).optional(),
   endTime: z.string().trim().min(1).optional(),
 });

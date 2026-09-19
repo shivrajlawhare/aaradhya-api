@@ -399,8 +399,11 @@ const itemSchema = new Schema<ItemAttributes>({
   // set from that same branch.
   limitedSeating: { type: Boolean },
   menuItems: { type: [{ type: Schema.Types.ObjectId, ref: 'MenuItem' }], default: [] },
-  eventName: { type: String, trim: true, required: requiredForItemType(ItemType.Event) },
-  venue: { type: String, trim: true, required: requiredForItemType(ItemType.Event) },
+  // Not required even for an Event Item (STORY-071, contract/schemas/
+  // event.ts's own eventItemBodySchema comment) — both reference quotations
+  // print Ceremony Items with no venue, and one has every field blank.
+  eventName: { type: String, trim: true },
+  venue: { type: String, trim: true },
   startTime: { type: String, trim: true },
   endTime: { type: String, trim: true },
 });

@@ -2775,7 +2775,11 @@ describe('POST /events/:id/sessions/:sid/items', () => {
     });
   });
 
-  it('returns 400 for an Event Item missing venue', async () => {
+  // STORY-071 — venue (and eventName) are no longer required on an Event
+  // Item: both reference quotations (docs/example_quatations/) print
+  // Ceremony Items with no venue, and one has a Ceremony Item with every
+  // field blank. Supersedes this test's own previous 400 expectation.
+  it('creates an Event Item with venue omitted, reading null', async () => {
     const { token } = await seedCaller();
     const { eventId, sessionId } = await seedEventWithSession(token);
     const payload: Record<string, unknown> = validEventItemPayload();
@@ -2783,8 +2787,24 @@ describe('POST /events/:id/sessions/:sid/items', () => {
 
     const response = await postItemAs(token, eventId, sessionId, payload);
 
-    expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(response.status).toBe(201);
+    expect(response.body.venue).toBeNull();
+  });
+
+  it('creates an Event Item with every optional field omitted', async () => {
+    const { token } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(token);
+
+    const response = await postItemAs(token, eventId, sessionId, { type: 'Event' });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      type: 'Event',
+      eventName: null,
+      venue: null,
+      startTime: null,
+      endTime: null,
+    });
   });
 
   it('adding a not-yet-existing Menu Item by name creates it, findable via GET /menu-items?search=', async () => {
@@ -2931,6 +2951,32 @@ describe('PATCH /events/:id/sessions/:sid/items/:iid', () => {
     expect(response.body).toEqual({
       error: { code: 'ITEM_NOT_FOUND', message: 'No Item with that id on this Session.' },
     });
+  });
+
+  // STORY-071 — venue/eventName are no longer required on an Event Item
+  // (contract/schemas/event.ts's own updateItemBodySchema comment): an
+  // explicit "" is a legitimate way to clear a previously-set value back to
+  // blank, not a rejected edit. Exercises the controller's own `!==
+  // undefined` guard (applyItemUpdate) end-to-end, not just by inspection.
+  it('clears venue/eventName back to blank with an explicit ""', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload());
+    const item = await postItemAs(token, created.body.id, session.body.id, validEventItemPayload());
+
+    const response = await patchItemAs(token, created.body.id, session.body.id, item.body.id, {
+      eventName: '',
+      venue: '',
+    });
+
+    expect(response.status).toBe(200);
+    // '' is a real, stored value here, not coalesced to null — the only
+    // coalescing toPublicItem's own `item.eventName ?? null` does is for a
+    // field that was never set at all (undefined), a genuinely different
+    // state from "explicitly cleared to empty".
+    expect(response.body.eventName).toBe('');
+    expect(response.body.venue).toBe('');
   });
 
   it('recomputes total_cost when pax or cost_per_plate change', async () => {
