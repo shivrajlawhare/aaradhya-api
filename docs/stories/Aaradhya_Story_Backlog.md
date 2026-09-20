@@ -6,6 +6,8 @@
 
 Each story is scoped to one of: a schema/model (no endpoint, no UI), one or two closely related endpoints against an existing schema (no UI), or one screen/panel against existing endpoints — never more than one of these three at once, per the build constraint. "System flow" describes what happens end-to-end even when a story only implements one leg of it, so the next story's starting point is clear.
 
+**Continues in `Aaradhya_Story_Backlog_Addendum_1.md`** (STORY-076 onward) — post-v1.1 product owner requests not yet folded into the SRS itself: Event Detail page restructure to mirror the wizard's steps, a redesigned Activity tab, save-button dirty-state gating, a toast notification provider, hard-deleting an Event, and two branding fixes.
+
 ## Design Token Legend
 
 Referenced by short name in each story's **Tokens** line.
