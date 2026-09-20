@@ -7,6 +7,9 @@ export interface LogChangeInput {
   oldValue?: unknown;
   newValue?: unknown;
   changedByUserId: string;
+  // STORY-081 — shared by every entry one PATCH handler invocation writes;
+  // the caller generates it once per request, not per field.
+  groupId?: string;
 }
 
 /**
@@ -32,6 +35,7 @@ export const logChange = async ({
   oldValue,
   newValue,
   changedByUserId,
+  groupId,
 }: LogChangeInput): Promise<ChangeLogEntryDocument> =>
   ChangeLogEntry.create({
     entityType,
@@ -40,4 +44,5 @@ export const logChange = async ({
     oldValue,
     newValue,
     changedBy: changedByUserId,
+    groupId,
   });

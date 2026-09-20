@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Error as MongooseError, Types, type QueryFilter } from 'mongoose';
 import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from '@ts-rest/express';
 import type { ServerInferRequest, ServerInferResponses } from '@ts-rest/core';
@@ -610,6 +611,10 @@ export const updateEvent: AppRouteMutationImplementation<typeof contract.updateE
   }
   const eventId = updated.id;
 
+  // STORY-081 — one groupId per handler invocation (not per field), so the
+  // Activity tab can render every field this single PATCH touched as one
+  // grouped edit action instead of N unrelated rows.
+  const groupId = randomUUID();
   await Promise.all(
     changes.map((change) =>
       logChange({
@@ -619,6 +624,7 @@ export const updateEvent: AppRouteMutationImplementation<typeof contract.updateE
         oldValue: change.oldValue,
         newValue: change.newValue,
         changedByUserId,
+        groupId,
       }),
     ),
   );
@@ -704,6 +710,10 @@ export const updateEventAccommodation: AppRouteMutationImplementation<
   }
   const eventId = updated.id;
 
+  // STORY-081 — one groupId per handler invocation (not per field), so the
+  // Activity tab can render every field this single PATCH touched as one
+  // grouped edit action instead of N unrelated rows.
+  const groupId = randomUUID();
   await Promise.all(
     changes.map((change) =>
       logChange({
@@ -713,6 +723,7 @@ export const updateEventAccommodation: AppRouteMutationImplementation<
         oldValue: change.oldValue,
         newValue: change.newValue,
         changedByUserId,
+        groupId,
       }),
     ),
   );
@@ -799,6 +810,10 @@ export const updateEventPayment: AppRouteMutationImplementation<typeof contract.
   }
   const eventId = updated.id;
 
+  // STORY-081 — one groupId per handler invocation (not per field), so the
+  // Activity tab can render every field this single PATCH touched as one
+  // grouped edit action instead of N unrelated rows.
+  const groupId = randomUUID();
   await Promise.all(
     changes.map((change) =>
       logChange({
@@ -808,6 +823,7 @@ export const updateEventPayment: AppRouteMutationImplementation<typeof contract.
         oldValue: change.oldValue,
         newValue: change.newValue,
         changedByUserId,
+        groupId,
       }),
     ),
   );
@@ -871,6 +887,10 @@ export const updateDocumentsChecklist: AppRouteMutationImplementation<
   }
   const eventId = updated.id;
 
+  // STORY-081 — one groupId per handler invocation (not per field), so the
+  // Activity tab can render every field this single PATCH touched as one
+  // grouped edit action instead of N unrelated rows.
+  const groupId = randomUUID();
   await Promise.all(
     changes.map((change) =>
       logChange({
@@ -880,6 +900,7 @@ export const updateDocumentsChecklist: AppRouteMutationImplementation<
         oldValue: change.oldValue,
         newValue: change.newValue,
         changedByUserId,
+        groupId,
       }),
     ),
   );
@@ -951,6 +972,10 @@ export const updateEventExtras: AppRouteMutationImplementation<typeof contract.u
   }
   const eventId = updated.id;
 
+  // STORY-081 — one groupId per handler invocation (not per field), so the
+  // Activity tab can render every field this single PATCH touched as one
+  // grouped edit action instead of N unrelated rows.
+  const groupId = randomUUID();
   await Promise.all(
     changes.map((change) =>
       logChange({
@@ -960,6 +985,7 @@ export const updateEventExtras: AppRouteMutationImplementation<typeof contract.u
         oldValue: change.oldValue,
         newValue: change.newValue,
         changedByUserId,
+        groupId,
       }),
     ),
   );
@@ -1325,6 +1351,10 @@ export const updateSession: AppRouteMutationImplementation<typeof contract.updat
   }
 
   const eventId = existing.id;
+  // STORY-081 — one groupId per handler invocation (not per field), so the
+  // Activity tab can render every field this single PATCH touched as one
+  // grouped edit action instead of N unrelated rows.
+  const groupId = randomUUID();
   await Promise.all(
     changes.map((change) =>
       logChange({
@@ -1334,6 +1364,7 @@ export const updateSession: AppRouteMutationImplementation<typeof contract.updat
         oldValue: change.oldValue,
         newValue: change.newValue,
         changedByUserId,
+        groupId,
       }),
     ),
   );
@@ -1597,6 +1628,10 @@ export const updateItem: AppRouteMutationImplementation<typeof contract.updateIt
   await existingEvent.save();
 
   const eventId = existingEvent.id;
+  // STORY-081 — one groupId per handler invocation (not per field), so the
+  // Activity tab can render every field this single PATCH touched as one
+  // grouped edit action instead of N unrelated rows.
+  const groupId = randomUUID();
   await Promise.all(
     changes.map((change) =>
       logChange({
@@ -1606,6 +1641,7 @@ export const updateItem: AppRouteMutationImplementation<typeof contract.updateIt
         oldValue: change.oldValue,
         newValue: change.newValue,
         changedByUserId,
+        groupId,
       }),
     ),
   );

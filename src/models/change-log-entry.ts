@@ -17,6 +17,13 @@ export interface ChangeLogEntryAttributes {
   // app, not a Mongoose ref. Nothing reads/populates it yet — STORY-008 has
   // no HTTP/read layer.
   changedBy: string;
+  // STORY-081 — one request-scoped id (a plain `crypto.randomUUID()`, not a
+  // Mongoose ref) shared by every entry a single PATCH handler invocation
+  // writes, so the Activity tab can render them as one grouped edit action
+  // instead of N unrelated rows. Optional and backward-compatible: every
+  // entry written before this field existed simply has none, and renders as
+  // its own single-item group (the frontend's own fallback, not a backfill).
+  groupId?: string;
   timestamp: Date;
 }
 
@@ -27,6 +34,7 @@ const changeLogEntrySchema = new Schema<ChangeLogEntryAttributes>({
   oldValue: { type: Schema.Types.Mixed },
   newValue: { type: Schema.Types.Mixed },
   changedBy: { type: String, required: true },
+  groupId: { type: String },
   // Server-set only: the write helper (src/services/change-log.ts) never
   // accepts one from a caller, and `immutable` blocks any later mutation
   // even by code that bypasses the helper — matches the audit-trail nature

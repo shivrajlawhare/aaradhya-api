@@ -13,6 +13,10 @@ const toPublicEntry = (entry: ChangeLogEntryDocument) => ({
   oldValue: entry.oldValue,
   newValue: entry.newValue,
   changedBy: entry.changedBy,
+  // STORY-081 — absent (undefined, not null) on any entry written before
+  // this field existed; the frontend renders such an entry as its own
+  // single-item group.
+  groupId: entry.groupId,
   timestamp: entry.timestamp,
 });
 

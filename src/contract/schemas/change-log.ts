@@ -15,5 +15,8 @@ export const changeLogEntryResultSchema = z.object({
   oldValue: z.unknown(),
   newValue: z.unknown(),
   changedBy: z.string(),
+  // STORY-081 — absent on any entry written before this field existed; the
+  // frontend renders such an entry as its own single-item group.
+  groupId: z.string().optional(),
   timestamp: z.date(),
 });
