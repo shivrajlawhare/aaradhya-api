@@ -21,6 +21,7 @@ import {
   type SessionAttributes,
   type SessionSetupAttributes,
 } from '../models/event.js';
+import { ChangeLogEntry } from '../models/change-log-entry.js';
 import { MenuItem, type MenuItemDocument } from '../models/menu-item.js';
 import { User } from '../models/user.js';
 import {
@@ -630,6 +631,40 @@ export const updateEvent: AppRouteMutationImplementation<typeof contract.updateE
   );
 
   return { status: 200, body: toPublicEvent(updated) };
+};
+
+// STORY-084 — hard delete: removes the Event document itself plus every
+// ChangeLogEntry row logged against it. Sessions/Items/Accommodation/
+// Payment/Documents Checklist/Extras are embedded sub-documents on the
+// Event schema itself, so they're removed automatically with it — no
+// separate cleanup needed. User/MenuItem/Venue/EventType/RoomType are
+// master lists an Event only ever references outward, never owns, so none
+// of them are touched here.
+//
+// Sequential, not transactional — Event.findByIdAndDelete, then (only once
+// that's confirmed a real Event existed) ChangeLogEntry.deleteMany, not
+// wrapped in mongoose.startSession(). This codebase has no transactional
+// precedent anywhere (grepped: zero uses of startSession), and a plain
+// standalone dev MongoDB instance can't run transactions without a replica
+// set — introducing that infrastructure for a single low-traffic admin
+// action isn't worth it. Deliberate trade-off, documented rather than
+// silently accepted: if the process crashes between the two deletes, an
+// orphaned ChangeLogEntry set could remain (never a duplicated/corrupted
+// Event, since this only returns success once the Event delete has already
+// completed).
+//
+// Typed as AppRouteQueryImplementation, not AppRouteMutationImplementation
+// — same reasoning deleteSession/deleteItem already document: a DELETE with
+// no request body is ts-rest's no-body variant.
+export const deleteEvent: AppRouteQueryImplementation<typeof contract.deleteEvent> = async ({ params }) => {
+  const deleted = await Event.findByIdAndDelete(params.id);
+  if (!deleted) {
+    return eventNotFound;
+  }
+
+  await ChangeLogEntry.deleteMany({ entityType: 'Event', entityId: params.id });
+
+  return { status: 204, body: undefined };
 };
 
 const areDatesEqual = (a: Date | undefined, b: Date | undefined): boolean =>

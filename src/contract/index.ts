@@ -203,6 +203,16 @@ export const contract = c.router({
     },
     summary: 'Edit core fields and/or Client Contacts on an Event (Event Manager only)',
   },
+  deleteEvent: {
+    method: 'DELETE',
+    path: '/events/:id',
+    pathParams: eventIdParamsSchema,
+    responses: {
+      204: c.noBody(),
+      404: apiErrorSchema,
+    },
+    summary: 'Permanently delete an Event and its Change Log Entries (Event Manager only)',
+  },
   updateEventAccommodation: {
     method: 'PATCH',
     path: '/events/:id/accommodation',

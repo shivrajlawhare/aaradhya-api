@@ -7,6 +7,7 @@ import {
   createEvent,
   createItem,
   createSession,
+  deleteEvent,
   deleteItem,
   deleteSession,
   getCalendar,
@@ -81,6 +82,10 @@ export const router = server.router(contract, {
   updateEvent: {
     middleware: eventManagerOnly,
     handler: updateEvent,
+  },
+  deleteEvent: {
+    middleware: eventManagerOnly,
+    handler: deleteEvent,
   },
   updateEventAccommodation: {
     middleware: eventManagerOnly,

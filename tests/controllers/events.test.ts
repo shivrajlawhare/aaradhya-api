@@ -63,6 +63,9 @@ const getEventAs = (token: string, id: string) =>
 const patchEventAs = (token: string, id: string, body: object) =>
   request(app).patch(`/events/${id}`).set('Authorization', `Bearer ${token}`).send(body);
 
+const deleteEventAs = (token: string, id: string) =>
+  request(app).delete(`/events/${id}`).set('Authorization', `Bearer ${token}`);
+
 const patchAccommodationAs = (token: string, id: string, body: object) =>
   request(app).patch(`/events/${id}/accommodation`).set('Authorization', `Bearer ${token}`).send(body);
 
@@ -1279,6 +1282,99 @@ describe('PATCH /events/:id', () => {
     expect(response.body.error.details).toEqual(
       expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })]),
     );
+  });
+});
+
+describe('DELETE /events/:id', () => {
+  it('returns 401 with no token', async () => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+
+    const response = await request(app).delete(`/events/${created.body.id}`);
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'returns 403 for a caller with role %s',
+    async (role) => {
+      const { token: creatorToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(creatorToken, validPayload(manager.id));
+      const { token } = await seedCaller(role);
+
+      const response = await deleteEventAs(token, created.body.id);
+
+      expect(response.status).toBe(403);
+    },
+  );
+
+  it('returns 404 for a well-formed but nonexistent id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await deleteEventAs(token, '507f1f77bcf86cd799439011');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: 'EVENT_NOT_FOUND', message: 'No Event with that id.' },
+    });
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const { token } = await seedCaller();
+
+    const response = await deleteEventAs(token, 'not-an-id');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('deletes the Event and every Change Log Entry recorded against it', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    // Real edits via the normal PATCH flow — each one writes a real Change
+    // Log Entry, so there's actually something in the DB for the cascade
+    // delete to prove it removes, not just an already-empty collection.
+    await patchEventAs(token, created.body.id, { status: EventStatus.Confirmed });
+    await patchEventAs(token, created.body.id, { foodGstRatePercent: 8 });
+    const entriesBeforeDelete = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
+    expect(entriesBeforeDelete.length).toBeGreaterThan(0);
+
+    const response = await deleteEventAs(token, created.body.id);
+
+    expect(response.status).toBe(204);
+    expect(await Event.findById(created.body.id)).toBeNull();
+    expect(await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id })).toHaveLength(0);
+  });
+
+  it('does not touch a different Event or its own Change Log Entries', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const other = await createEventAs(token, validPayload(manager.id));
+    await patchEventAs(token, other.body.id, { status: EventStatus.Confirmed });
+
+    await deleteEventAs(token, created.body.id);
+
+    expect(await Event.findById(other.body.id)).not.toBeNull();
+    const otherEntries = await ChangeLogEntry.find({ entityType: 'Event', entityId: other.body.id });
+    expect(otherEntries.length).toBeGreaterThan(0);
+  });
+
+  // This story's own edge case — a freshly created Event has no Change Log
+  // Entries yet (creation itself isn't logged, only edits are); the
+  // deleteMany call still runs and simply matches nothing.
+  it('succeeds for an Event with zero Change Log Entries', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await deleteEventAs(token, created.body.id);
+
+    expect(response.status).toBe(204);
+    expect(await Event.findById(created.body.id)).toBeNull();
   });
 });
 
