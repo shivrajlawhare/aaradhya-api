@@ -15,7 +15,7 @@ export const generateEventId = async (now: Date = new Date()): Promise<string> =
   const counter = await EventIdCounter.findOneAndUpdate(
     { _id: String(year) },
     { $inc: { seq: 1 } },
-    { upsert: true, returnDocument: 'after' },
+    { upsert: true, returnDocument: 'after' }
   );
   // Unreachable in practice (`upsert: true, new: true` always returns the
   // post-update document) — guarded instead of asserted past, per

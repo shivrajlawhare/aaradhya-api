@@ -1,7 +1,7 @@
 import { hash } from '@node-rs/argon2';
+import { jwtVerify } from 'jose';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { jwtVerify } from 'jose';
 import { createApp } from '../../src/app.js';
 import { Role, User } from '../../src/models/user.js';
 import { clearCollections, connectTestDb, disconnectTestDb } from '../support/db.js';
@@ -48,10 +48,7 @@ describe('POST /auth/login', () => {
     const user = await seedUser();
 
     const { body } = await login({ username: 'priya', password: PASSWORD });
-    const { payload } = await jwtVerify(
-      body.token,
-      new TextEncoder().encode(process.env.JWT_SECRET),
-    );
+    const { payload } = await jwtVerify(body.token, new TextEncoder().encode(process.env.JWT_SECRET));
 
     expect(payload.sub).toBe(user.id);
     expect(payload.role).toBe(Role.EventManager);
@@ -117,7 +114,7 @@ describe('POST /auth/login', () => {
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
     expect(response.body.error.details).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'password' })]),
+      expect.arrayContaining([expect.objectContaining({ field: 'password' })])
     );
   });
 });

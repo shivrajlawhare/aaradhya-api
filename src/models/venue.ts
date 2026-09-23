@@ -1,4 +1,4 @@
-import { Schema, model, type HydratedDocument } from 'mongoose';
+import { type HydratedDocument, model, Schema } from 'mongoose';
 
 // SRS §5.8/§4.6 — organization-wide master list backing the Venue dropdown
 // on Session entry (STORY-062's Settings screen manages it; STORY-061 is
@@ -24,7 +24,7 @@ const venueSchema = new Schema<VenueAttributes>(
     // reference to this document in the first place.
     active: { type: Boolean, default: true },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 // Unique only among currently-active entries (partialFilterExpression) —
@@ -33,7 +33,7 @@ const venueSchema = new Schema<VenueAttributes>(
 // reintroducing a name that was previously deactivated.
 venueSchema.index(
   { name: 1 },
-  { unique: true, collation: { locale: 'en', strength: 2 }, partialFilterExpression: { active: true } },
+  { unique: true, collation: { locale: 'en', strength: 2 }, partialFilterExpression: { active: true } }
 );
 
 export type VenueDocument = HydratedDocument<VenueAttributes>;

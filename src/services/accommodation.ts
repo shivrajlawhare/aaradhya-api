@@ -63,7 +63,7 @@ export const computeTotalDays = (checkIn: Date, checkOut: Date): number =>
 export const computeRoomLineTotalInclGst = (
   { tariff, noOfRooms }: Pick<RoomLineInput, 'tariff' | 'noOfRooms'>,
   totalDays: number,
-  gstRatePercent: number = ACCOMMODATION_GST_RATE_PERCENT,
+  gstRatePercent: number = ACCOMMODATION_GST_RATE_PERCENT
 ): number => roundToCurrency(tariff * noOfRooms * totalDays * (1 + gstRatePercent / 100));
 
 // Total guests the block is housing: occupancy is a room type's per-room
@@ -77,8 +77,8 @@ export const computeTotalOccupancy = (roomLines: RoomLineInput[]): number =>
 export const computeTotalCharges = (
   roomLines: RoomLineInput[],
   totalDays: number,
-  gstRatePercent: number = ACCOMMODATION_GST_RATE_PERCENT,
+  gstRatePercent: number = ACCOMMODATION_GST_RATE_PERCENT
 ): number =>
   roundToCurrency(
-    roomLines.reduce((total, line) => total + computeRoomLineTotalInclGst(line, totalDays, gstRatePercent), 0),
+    roomLines.reduce((total, line) => total + computeRoomLineTotalInclGst(line, totalDays, gstRatePercent), 0)
   );

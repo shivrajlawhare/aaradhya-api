@@ -52,7 +52,7 @@ describe('GET /menu-items', () => {
       const response = await listMenuItemsAs(token);
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
   it('returns the full list when search is omitted', async () => {
@@ -120,7 +120,7 @@ describe('POST /menu-items', () => {
       const response = await createMenuItemAs(token, { name: `Item by ${role}` });
 
       expect(response.status).toBe(201);
-    },
+    }
   );
 
   it('creates the Menu Item and returns it', async () => {
@@ -201,7 +201,7 @@ describe('PATCH /menu-items/:id', () => {
       const response = await updateMenuItemAs(token, item.id, { name: 'Paneer Tikka Renamed' });
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
   it('edits name and default_cost_per_plate, returning the updated document', async () => {

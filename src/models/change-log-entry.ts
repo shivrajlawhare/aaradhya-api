@@ -1,4 +1,4 @@
-import { Schema, model, type HydratedDocument } from 'mongoose';
+import { type HydratedDocument, model, Schema } from 'mongoose';
 
 export interface ChangeLogEntryAttributes {
   entityType: string;
@@ -48,7 +48,4 @@ changeLogEntrySchema.index({ entityType: 1, entityId: 1 });
 
 export type ChangeLogEntryDocument = HydratedDocument<ChangeLogEntryAttributes>;
 
-export const ChangeLogEntry = model<ChangeLogEntryAttributes>(
-  'ChangeLogEntry',
-  changeLogEntrySchema,
-);
+export const ChangeLogEntry = model<ChangeLogEntryAttributes>('ChangeLogEntry', changeLogEntrySchema);

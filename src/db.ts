@@ -1,5 +1,5 @@
-import dns from 'node:dns';
 import mongoose from 'mongoose';
+import dns from 'node:dns';
 import { config } from './config.js';
 
 // The mongodb+srv:// URI needs an SRV DNS lookup before it can connect at

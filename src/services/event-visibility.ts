@@ -185,7 +185,7 @@ const filterAccommodation = (accommodation: VisibilityAccommodation): Visibility
 
 const filterSession = (
   session: VisibilitySession,
-  { canSeeSetup, canSeeMenu }: { canSeeSetup: boolean; canSeeMenu: boolean },
+  { canSeeSetup, canSeeMenu }: { canSeeSetup: boolean; canSeeMenu: boolean }
 ): VisibilitySession => ({
   ...session,
   venueCost: undefined,

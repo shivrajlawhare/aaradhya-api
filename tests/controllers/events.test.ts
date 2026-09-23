@@ -5,6 +5,7 @@ import { config } from '../../src/config.js';
 import { ChangeLogEntry } from '../../src/models/change-log-entry.js';
 import { ClientContactRole, Event, EventStatus } from '../../src/models/event.js';
 import { Role, User } from '../../src/models/user.js';
+import { renderPdfFromUrl } from '../../src/services/browser-pdf.js';
 import { signSessionToken } from '../../src/services/token.js';
 import { clearCollections, connectTestDb, disconnectTestDb } from '../support/db.js';
 
@@ -18,7 +19,6 @@ import { clearCollections, connectTestDb, disconnectTestDb } from '../support/db
 vi.mock('../../src/services/browser-pdf.js', () => ({
   renderPdfFromUrl: vi.fn(),
 }));
-import { renderPdfFromUrl } from '../../src/services/browser-pdf.js';
 
 const app = createApp();
 
@@ -51,8 +51,7 @@ const validPayload = (managerId: string, overrides: Record<string, unknown> = {}
 const createEventAs = (token: string, body: object) =>
   request(app).post('/events').set('Authorization', `Bearer ${token}`).send(body);
 
-const listEventsAs = (token: string) =>
-  request(app).get('/events').set('Authorization', `Bearer ${token}`);
+const listEventsAs = (token: string) => request(app).get('/events').set('Authorization', `Bearer ${token}`);
 
 const searchEventsAs = (token: string, query: Record<string, string>) =>
   request(app).get('/events/search').query(query).set('Authorization', `Bearer ${token}`);
@@ -157,17 +156,14 @@ describe('POST /events', () => {
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token } = await seedCaller(role);
-      const manager = await seedEventManager();
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token } = await seedCaller(role);
+    const manager = await seedEventManager();
 
-      const response = await createEventAs(token, validPayload(manager.id));
+    const response = await createEventAs(token, validPayload(manager.id));
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('creates the Event, defaulting status to Tentative and generating an event_id', async () => {
     const { token } = await seedCaller();
@@ -191,10 +187,7 @@ describe('POST /events', () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
 
-    const response = await createEventAs(
-      token,
-      validPayload(manager.id, { status: EventStatus.Confirmed }),
-    );
+    const response = await createEventAs(token, validPayload(manager.id, { status: EventStatus.Confirmed }));
 
     expect(response.status).toBe(201);
     expect(response.body.status).toBe(EventStatus.Confirmed);
@@ -220,10 +213,7 @@ describe('POST /events', () => {
     const manager = await seedEventManager();
     const someoneElse = await seedEventManager();
 
-    const response = await createEventAs(
-      token,
-      validPayload(manager.id, { createdBy: someoneElse.id }),
-    );
+    const response = await createEventAs(token, validPayload(manager.id, { createdBy: someoneElse.id }));
 
     expect(response.status).toBe(201);
     expect(response.body.createdBy).toBe(caller.id);
@@ -250,7 +240,7 @@ describe('POST /events', () => {
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
     expect(response.body.error.details).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'clientContacts' })]),
+      expect.arrayContaining([expect.objectContaining({ field: 'clientContacts' })])
     );
   });
 
@@ -262,7 +252,7 @@ describe('POST /events', () => {
       token,
       validPayload(manager.id, {
         clientContacts: [{ name: '', contactNumber: '9876543210', role: ClientContactRole.Bride }],
-      }),
+      })
     );
 
     expect(response.status).toBe(400);
@@ -277,7 +267,7 @@ describe('POST /events', () => {
       token,
       validPayload(manager.id, {
         clientContacts: [{ name: 'Priya Nair', role: ClientContactRole.Bride }],
-      }),
+      })
     );
 
     expect(response.status).toBe(400);
@@ -296,7 +286,7 @@ describe('POST /events', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.error.code).toBe('VALIDATION_ERROR');
-    },
+    }
   );
 
   it('returns 400 for a malformed event_manager id', async () => {
@@ -315,7 +305,7 @@ describe('POST /events', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.details).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })]),
+      expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })])
     );
   });
 
@@ -332,7 +322,7 @@ describe('POST /events', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.details).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })]),
+      expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })])
     );
   });
 
@@ -360,8 +350,12 @@ describe('POST /events', () => {
             items: [validMealItemPayload({ mealName: 'Lunch', pax: 10, costPerPlate: 200 }), validEventItemPayload()],
           }),
         ],
-        accommodation: { checkIn: '2026-06-14', checkOut: '2026-06-16', roomLines: [{ roomType: 'Deluxe', occupancy: 2, tariff: 2500, noOfRooms: 3 }] },
-      }),
+        accommodation: {
+          checkIn: '2026-06-14',
+          checkOut: '2026-06-16',
+          roomLines: [{ roomType: 'Deluxe', occupancy: 2, tariff: 2500, noOfRooms: 3 }],
+        },
+      })
     );
 
     expect(response.status).toBe(201);
@@ -372,7 +366,7 @@ describe('POST /events', () => {
       expect.arrayContaining([
         expect.objectContaining({ type: 'Meal', mealName: 'Lunch', totalCost: 2000 }),
         expect.objectContaining({ type: 'Event', eventName: 'Muhurta' }),
-      ]),
+      ])
     );
     expect(response.body.accommodation.roomLines).toHaveLength(1);
     expect(response.body.accommodation.totalDays).toBe(2);
@@ -389,16 +383,17 @@ describe('POST /events', () => {
     const response = await createEventAs(
       token,
       validPayload(manager.id, {
-        sessions: [
-          validSessionPayload({ items: [validMealItemPayload({ menuItems: [{ name: 'Paneer Tikka' }] })] }),
-        ],
-      }),
+        sessions: [validSessionPayload({ items: [validMealItemPayload({ menuItems: [{ name: 'Paneer Tikka' }] })] })],
+      })
     );
 
     expect(response.status).toBe(201);
     expect(response.body.sessions[0].items[0].menuItems).toHaveLength(1);
 
-    const search = await request(app).get('/menu-items').query({ search: 'Paneer' }).set('Authorization', `Bearer ${token}`);
+    const search = await request(app)
+      .get('/menu-items')
+      .query({ search: 'Paneer' })
+      .set('Authorization', `Bearer ${token}`);
     expect(search.body).toHaveLength(1);
     expect(search.body[0]?.id).toBe(response.body.sessions[0].items[0].menuItems[0]);
   });
@@ -413,7 +408,7 @@ describe('POST /events', () => {
         sessions: [
           validSessionPayload({ items: [validMealItemPayload({ menuItems: [{ id: '507f1f77bcf86cd799439011' }] })] }),
         ],
-      }),
+      })
     );
 
     expect(response.status).toBe(400);
@@ -430,7 +425,7 @@ describe('POST /events', () => {
       token,
       validPayload(manager.id, {
         sessions: [validSessionPayload({ startDate: '2026-06-15', endDate: '2026-06-10' })],
-      }),
+      })
     );
 
     expect(response.status).toBe(400);
@@ -449,7 +444,7 @@ describe('POST /events', () => {
           { name: 'Photographer', note: 'wedding', amount: 25000 },
           { name: 'Mehendi Artist', amount: 8000 },
         ],
-      }),
+      })
     );
 
     expect(response.status).toBe(201);
@@ -488,7 +483,7 @@ describe('GET /events', () => {
       const response = await listEventsAs(token);
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
   it('returns every Event with its core fields', async () => {
@@ -502,9 +497,10 @@ describe('GET /events', () => {
     expect(response.status).toBe(200);
     expect(Array.isArray(response.body)).toBe(true);
     expect(response.body).toHaveLength(2);
-    expect(response.body.map((event: { eventFamilyType: string }) => event.eventFamilyType).sort()).toEqual(
-      ['Corporate Offsite', 'Wedding'],
-    );
+    expect(response.body.map((event: { eventFamilyType: string }) => event.eventFamilyType).sort()).toEqual([
+      'Corporate Offsite',
+      'Wedding',
+    ]);
     for (const event of response.body) {
       expect(event).toMatchObject({
         id: expect.any(String),
@@ -540,10 +536,10 @@ describe('GET /events/search', () => {
       const response = await searchEventsAs(token, {});
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
-  it("is not swallowed by GET /events/:id — the literal path wins, not treated as an event id", async () => {
+  it('is not swallowed by GET /events/:id — the literal path wins, not treated as an event id', async () => {
     const { token } = await seedCaller();
 
     const response = await searchEventsAs(token, {});
@@ -572,7 +568,7 @@ describe('GET /events/search', () => {
     await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ startDate: '2026-09-10', endDate: '2026-09-14' }),
+      validSessionPayload({ startDate: '2026-09-10', endDate: '2026-09-14' })
     );
 
     const response = await searchEventsAs(token, { from: '2026-09-12', to: '2026-09-20' });
@@ -589,7 +585,7 @@ describe('GET /events/search', () => {
     await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ startDate: '2026-08-01', endDate: '2026-08-05' }),
+      validSessionPayload({ startDate: '2026-08-01', endDate: '2026-08-05' })
     );
 
     const response = await searchEventsAs(token, { from: '2026-09-12', to: '2026-09-20' });
@@ -604,7 +600,7 @@ describe('GET /events/search', () => {
     await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ startDate: '2020-01-01', endDate: '2020-01-01' }),
+      validSessionPayload({ startDate: '2020-01-01', endDate: '2020-01-01' })
     );
 
     const response = await searchEventsAs(token, { eventFamilyType: 'Wedding' });
@@ -660,7 +656,7 @@ describe('GET /events/search', () => {
     await createEventAs(token, validPayload(manager.id, { eventFamilyType: 'Wedding' }));
     const custom = await createEventAs(
       token,
-      validPayload(manager.id, { eventFamilyType: 'Corporate Retreat (Custom)' }),
+      validPayload(manager.id, { eventFamilyType: 'Corporate Retreat (Custom)' })
     );
 
     const response = await searchEventsAs(token, { eventFamilyType: 'Corporate Retreat (Custom)' });
@@ -720,7 +716,7 @@ describe('GET /events/:id', () => {
       const response = await getEventAs(token, created.body.id);
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
   it('returns the Event matching the given id', async () => {
@@ -942,13 +938,13 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
       managerToken,
       validPayload(manager.id, {
         clientContacts: [{ name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' }],
-      }),
+      })
     );
     const eventId = created.body.id;
     const session = await postSessionAs(
       managerToken,
       eventId,
-      validSessionPayload({ venue: 'Lawn', setup: { seating: 'Theatre', tableCount: 5 } }),
+      validSessionPayload({ venue: 'Lawn', setup: { seating: 'Theatre', tableCount: 5 } })
     );
     await postItemAs(managerToken, eventId, session.body.id, validMealItemPayload({ pax: 10, costPerPlate: 200 }));
     await postItemAs(managerToken, eventId, session.body.id, validEventItemPayload());
@@ -993,9 +989,7 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
     expect(response.status).toBe(200);
     // Sees: event name/date(s)/POC/venue/pax/menu (meal timing/food instructions).
     expect(response.body.eventFamilyType).toBe('Wedding');
-    expect(response.body.clientContacts).toEqual([
-      { name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' },
-    ]);
+    expect(response.body.clientContacts).toEqual([{ name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' }]);
     expect(response.body.sessions[0].startDate).toBeDefined();
     expect(response.body.sessions[0].venue).toBe('Lawn');
     expect(response.body.sessions[0].pax).toBe(200);
@@ -1040,9 +1034,7 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
     const response = await getEventAs(token, eventId);
 
     expect(response.status).toBe(200);
-    expect(response.body.clientContacts).toEqual([
-      { name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' },
-    ]);
+    expect(response.body.clientContacts).toEqual([{ name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' }]);
     expect(response.body.sessions[0].pax).toBe(200);
     expect(response.body.accommodation.roomLines[0]).toMatchObject({ roomType: 'Double', noOfRooms: 1 });
     expect(response.body.accommodation).toHaveProperty('checkIn');
@@ -1056,7 +1048,7 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
     expect(response.body.accommodation.roomLines[0]).not.toHaveProperty('tariff');
   });
 
-  it('venue is genuinely visible to all four roles — this story\'s own edge case', async () => {
+  it("venue is genuinely visible to all four roles — this story's own edge case", async () => {
     const { eventId, managerToken } = await buildFixtureEvent();
 
     for (const role of [Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception]) {
@@ -1074,7 +1066,7 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
         const token = await tokenForRole(role, managerToken);
         const response = await getEventAs(token, eventId);
         return JSON.stringify(response.body);
-      }),
+      })
     );
 
     expect(new Set(shapes).size).toBe(4);
@@ -1087,26 +1079,21 @@ describe('PATCH /events/:id', () => {
     const manager = await seedEventManager();
     const created = await createEventAs(creatorToken, validPayload(manager.id));
 
-    const response = await request(app)
-      .patch(`/events/${created.body.id}`)
-      .send({ status: EventStatus.Confirmed });
+    const response = await request(app).patch(`/events/${created.body.id}`).send({ status: EventStatus.Confirmed });
 
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token: creatorToken } = await seedCaller();
-      const manager = await seedEventManager();
-      const created = await createEventAs(creatorToken, validPayload(manager.id));
-      const { token } = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+    const { token } = await seedCaller(role);
 
-      const response = await patchEventAs(token, created.body.id, { status: EventStatus.Confirmed });
+    const response = await patchEventAs(token, created.body.id, { status: EventStatus.Confirmed });
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
@@ -1259,7 +1246,7 @@ describe('PATCH /events/:id', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.details).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })]),
+      expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })])
     );
     const stored = await Event.findById(created.body.id);
     expect(stored?.eventManager.toString()).toBe(manager.id);
@@ -1280,7 +1267,7 @@ describe('PATCH /events/:id', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.details).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })]),
+      expect.arrayContaining([expect.objectContaining({ field: 'eventManager' })])
     );
   });
 });
@@ -1296,19 +1283,16 @@ describe('DELETE /events/:id', () => {
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token: creatorToken } = await seedCaller();
-      const manager = await seedEventManager();
-      const created = await createEventAs(creatorToken, validPayload(manager.id));
-      const { token } = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+    const { token } = await seedCaller(role);
 
-      const response = await deleteEventAs(token, created.body.id);
+    const response = await deleteEventAs(token, created.body.id);
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
@@ -1384,26 +1368,21 @@ describe('PATCH /events/:id/accommodation', () => {
     const manager = await seedEventManager();
     const created = await createEventAs(creatorToken, validPayload(manager.id));
 
-    const response = await request(app)
-      .patch(`/events/${created.body.id}/accommodation`)
-      .send({ roomLines: [] });
+    const response = await request(app).patch(`/events/${created.body.id}/accommodation`).send({ roomLines: [] });
 
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token: creatorToken } = await seedCaller();
-      const manager = await seedEventManager();
-      const created = await createEventAs(creatorToken, validPayload(manager.id));
-      const { token } = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+    const { token } = await seedCaller(role);
 
-      const response = await patchAccommodationAs(token, created.body.id, { roomLines: [] });
+    const response = await patchAccommodationAs(token, created.body.id, { roomLines: [] });
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
@@ -1610,7 +1589,7 @@ describe('PATCH /events/:id/payment', () => {
       const response = await patchPaymentAs(token, created.body.id, { totalEstimatedAmount: 50000 });
 
       expect(response.status).toBe(403);
-    },
+    }
   );
 
   it('returns 200 for an Event Manager', async () => {
@@ -1732,11 +1711,7 @@ describe('PATCH /events/:id/payment', () => {
 
     expect(response.status).toBe(200);
     const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
-    expect(entries.map((entry) => entry.field).sort()).toEqual([
-      'advancePaid',
-      'paymentMode',
-      'totalEstimatedAmount',
-    ]);
+    expect(entries.map((entry) => entry.field).sort()).toEqual(['advancePaid', 'paymentMode', 'totalEstimatedAmount']);
     for (const entry of entries) {
       expect(entry.changedBy).toBe(caller.id);
     }
@@ -1776,26 +1751,21 @@ describe('PATCH /events/:id/documents', () => {
     const manager = await seedEventManager();
     const created = await createEventAs(creatorToken, validPayload(manager.id));
 
-    const response = await request(app)
-      .patch(`/events/${created.body.id}/documents`)
-      .send({ aadharCard: true });
+    const response = await request(app).patch(`/events/${created.body.id}/documents`).send({ aadharCard: true });
 
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token: creatorToken } = await seedCaller();
-      const manager = await seedEventManager();
-      const created = await createEventAs(creatorToken, validPayload(manager.id));
-      const { token } = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+    const { token } = await seedCaller(role);
 
-      const response = await patchDocumentsChecklistAs(token, created.body.id, { aadharCard: true });
+    const response = await patchDocumentsChecklistAs(token, created.body.id, { aadharCard: true });
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
@@ -1929,26 +1899,21 @@ describe('PATCH /events/:id/extras', () => {
     const manager = await seedEventManager();
     const created = await createEventAs(creatorToken, validPayload(manager.id));
 
-    const response = await request(app)
-      .patch(`/events/${created.body.id}/extras`)
-      .send({ decoration: 5000 });
+    const response = await request(app).patch(`/events/${created.body.id}/extras`).send({ decoration: 5000 });
 
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token: creatorToken } = await seedCaller();
-      const manager = await seedEventManager();
-      const created = await createEventAs(creatorToken, validPayload(manager.id));
-      const { token } = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+    const { token } = await seedCaller(role);
 
-      const response = await patchExtrasAs(token, created.body.id, { decoration: 5000 });
+    const response = await patchExtrasAs(token, created.body.id, { decoration: 5000 });
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
@@ -2088,7 +2053,7 @@ describe('GET /events/:id/quotation-summary', () => {
       const response = await getQuotationSummaryAs(token, created.body.id);
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
   it('returns 404 for a well-formed but nonexistent id', async () => {
@@ -2254,7 +2219,7 @@ describe('GET /events/:id/quotation.pdf', () => {
       const response = await getQuotationPdfAs(token, created.body.id);
 
       expect(response.status).toBe(403);
-    },
+    }
   );
 
   it('returns 404 for a well-formed but nonexistent id', async () => {
@@ -2295,7 +2260,7 @@ describe('GET /events/:id/quotation.pdf', () => {
       expect(Buffer.compare(response.body, mockPdfBuffer)).toBe(0);
     });
 
-    it('drives the headless browser to this exact Event\'s own print-mode quotation-preview URL', async () => {
+    it("drives the headless browser to this exact Event's own print-mode quotation-preview URL", async () => {
       const { token } = await seedCaller();
       const manager = await seedEventManager();
       const created = await createEventAs(token, validPayload(manager.id));
@@ -2305,11 +2270,11 @@ describe('GET /events/:id/quotation.pdf', () => {
       expect(renderPdfFromUrl).toHaveBeenCalledWith(
         config.webAppUrl,
         `/events/${created.body.id}/quotation-preview?print=1`,
-        expect.objectContaining({ token: expect.any(String) }),
+        expect.objectContaining({ token: expect.any(String) })
       );
     });
 
-    it('mints a session for the SAME authenticated caller, not the Event\'s own assigned manager', async () => {
+    it("mints a session for the SAME authenticated caller, not the Event's own assigned manager", async () => {
       const { caller, token } = await seedCaller();
       const manager = await seedEventManager();
       const created = await createEventAs(token, validPayload(manager.id));
@@ -2340,26 +2305,21 @@ describe('POST /events/:id/sessions', () => {
     const manager = await seedEventManager();
     const created = await createEventAs(creatorToken, validPayload(manager.id));
 
-    const response = await request(app)
-      .post(`/events/${created.body.id}/sessions`)
-      .send(validSessionPayload());
+    const response = await request(app).post(`/events/${created.body.id}/sessions`).send(validSessionPayload());
 
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token: creatorToken } = await seedCaller();
-      const manager = await seedEventManager();
-      const created = await createEventAs(creatorToken, validPayload(manager.id));
-      const { token } = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token: creatorToken } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(creatorToken, validPayload(manager.id));
+    const { token } = await seedCaller(role);
 
-      const response = await postSessionAs(token, created.body.id, validSessionPayload());
+    const response = await postSessionAs(token, created.body.id, validSessionPayload());
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
@@ -2422,7 +2382,7 @@ describe('POST /events/:id/sessions', () => {
     const response = await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ startDate: '2026-06-15', endDate: '2026-06-14' }),
+      validSessionPayload({ startDate: '2026-06-15', endDate: '2026-06-14' })
     );
 
     expect(response.status).toBe(400);
@@ -2440,7 +2400,7 @@ describe('POST /events/:id/sessions', () => {
     const response = await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ startDate: '2026-06-15', endDate: '2026-06-15' }),
+      validSessionPayload({ startDate: '2026-06-15', endDate: '2026-06-15' })
     );
 
     expect(response.status).toBe(201);
@@ -2456,7 +2416,7 @@ describe('POST /events/:id/sessions', () => {
     const response = await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ venue: 'Poolside', venueCost: 75000 }),
+      validSessionPayload({ venue: 'Poolside', venueCost: 75000 })
     );
 
     expect(response.status).toBe(201);
@@ -2515,18 +2475,15 @@ describe('PATCH /events/:id/sessions/:sid', () => {
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token: creatorToken } = await seedCaller();
-      const { eventId, sessionId } = await seedEventWithSession(creatorToken);
-      const { token } = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token: creatorToken } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(creatorToken);
+    const { token } = await seedCaller(role);
 
-      const response = await patchSessionAs(token, eventId, sessionId, { pax: 250 });
+    const response = await patchSessionAs(token, eventId, sessionId, { pax: 250 });
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent event id', async () => {
     const { token } = await seedCaller();
@@ -2620,10 +2577,7 @@ describe('PATCH /events/:id/sessions/:sid', () => {
 
     expect(response.status).toBe(200);
     const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: eventId });
-    expect(entries.map((entry) => entry.field).sort()).toEqual([
-      'sessions[Wedding].pax',
-      'sessions[Wedding].venue',
-    ]);
+    expect(entries.map((entry) => entry.field).sort()).toEqual(['sessions[Wedding].pax', 'sessions[Wedding].venue']);
     for (const entry of entries) {
       expect(entry.changedBy).toBe(caller.id);
     }
@@ -2674,18 +2628,15 @@ describe('DELETE /events/:id/sessions/:sid', () => {
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token: creatorToken } = await seedCaller();
-      const { eventId, sessionId } = await seedEventWithSession(creatorToken);
-      const { token } = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token: creatorToken } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(creatorToken);
+    const { token } = await seedCaller(role);
 
-      const response = await deleteSessionAs(token, eventId, sessionId);
+    const response = await deleteSessionAs(token, eventId, sessionId);
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent event id', async () => {
     const { token } = await seedCaller();
@@ -2768,18 +2719,15 @@ describe('POST /events/:id/sessions/:sid/items', () => {
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token: creatorToken } = await seedCaller();
-      const { eventId, sessionId } = await seedEventWithSession(creatorToken);
-      const { token } = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token: creatorToken } = await seedCaller();
+    const { eventId, sessionId } = await seedEventWithSession(creatorToken);
+    const { token } = await seedCaller(role);
 
-      const response = await postItemAs(token, eventId, sessionId, validMealItemPayload());
+    const response = await postItemAs(token, eventId, sessionId, validMealItemPayload());
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent event id', async () => {
     const { token } = await seedCaller();
@@ -2788,7 +2736,7 @@ describe('POST /events/:id/sessions/:sid/items', () => {
       token,
       '507f1f77bcf86cd799439011',
       '507f1f77bcf86cd799439012',
-      validMealItemPayload(),
+      validMealItemPayload()
     );
 
     expect(response.status).toBe(404);
@@ -2825,12 +2773,7 @@ describe('POST /events/:id/sessions/:sid/items', () => {
     const { token } = await seedCaller();
     const { eventId, sessionId } = await seedEventWithSession(token);
 
-    const response = await postItemAs(
-      token,
-      eventId,
-      sessionId,
-      validMealItemPayload({ totalCost: 999999 }),
-    );
+    const response = await postItemAs(token, eventId, sessionId, validMealItemPayload({ totalCost: 999999 }));
 
     expect(response.status).toBe(201);
     expect(typeof response.body.id).toBe('string');
@@ -2861,7 +2804,7 @@ describe('POST /events/:id/sessions/:sid/items', () => {
       token,
       eventId,
       sessionId,
-      validMealItemPayload({ pax: 200, costPerPlate: 500, limitedSeating: true }),
+      validMealItemPayload({ pax: 200, costPerPlate: 500, limitedSeating: true })
     );
 
     expect(response.status).toBe(201);
@@ -2927,7 +2870,7 @@ describe('POST /events/:id/sessions/:sid/items', () => {
       token,
       eventId,
       sessionId,
-      validMealItemPayload({ menuItems: [{ name: 'Paneer Tikka' }] }),
+      validMealItemPayload({ menuItems: [{ name: 'Paneer Tikka' }] })
     );
 
     expect(response.status).toBe(201);
@@ -2951,7 +2894,7 @@ describe('POST /events/:id/sessions/:sid/items', () => {
       token,
       eventId,
       sessionId,
-      validMealItemPayload({ menuItems: [{ name: 'paneer tikka' }] }),
+      validMealItemPayload({ menuItems: [{ name: 'paneer tikka' }] })
     );
 
     expect(response.status).toBe(201);
@@ -2972,7 +2915,7 @@ describe('POST /events/:id/sessions/:sid/items', () => {
       token,
       eventId,
       sessionId,
-      validMealItemPayload({ menuItems: [{ id: existing.body.id }] }),
+      validMealItemPayload({ menuItems: [{ id: existing.body.id }] })
     );
 
     expect(response.status).toBe(201);
@@ -2987,7 +2930,7 @@ describe('POST /events/:id/sessions/:sid/items', () => {
       token,
       eventId,
       sessionId,
-      validMealItemPayload({ menuItems: [{ id: '507f1f77bcf86cd799439011' }] }),
+      validMealItemPayload({ menuItems: [{ id: '507f1f77bcf86cd799439011' }] })
     );
 
     expect(response.status).toBe(400);
@@ -3012,12 +2955,7 @@ describe('PATCH /events/:id/sessions/:sid/items/:iid', () => {
     const manager = await seedEventManager();
     const created = await createEventAs(token, validPayload(manager.id));
     const session = await postSessionAs(token, created.body.id, validSessionPayload());
-    const item = await postItemAs(
-      token,
-      created.body.id,
-      session.body.id,
-      validMealItemPayload(itemOverrides),
-    );
+    const item = await postItemAs(token, created.body.id, session.body.id, validMealItemPayload(itemOverrides));
     return { eventId: created.body.id, sessionId: session.body.id, itemId: item.body.id };
   };
 
@@ -3032,18 +2970,15 @@ describe('PATCH /events/:id/sessions/:sid/items/:iid', () => {
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token: creatorToken } = await seedCaller();
-      const { eventId, sessionId, itemId } = await seedEventWithItem(creatorToken);
-      const { token } = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token: creatorToken } = await seedCaller();
+    const { eventId, sessionId, itemId } = await seedEventWithItem(creatorToken);
+    const { token } = await seedCaller(role);
 
-      const response = await patchItemAs(token, eventId, sessionId, itemId, { pax: 150 });
+    const response = await patchItemAs(token, eventId, sessionId, itemId, { pax: 150 });
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent item id', async () => {
     const { token } = await seedCaller();
@@ -3051,13 +2986,9 @@ describe('PATCH /events/:id/sessions/:sid/items/:iid', () => {
     const created = await createEventAs(token, validPayload(manager.id));
     const session = await postSessionAs(token, created.body.id, validSessionPayload());
 
-    const response = await patchItemAs(
-      token,
-      created.body.id,
-      session.body.id,
-      '507f1f77bcf86cd799439012',
-      { pax: 150 },
-    );
+    const response = await patchItemAs(token, created.body.id, session.body.id, '507f1f77bcf86cd799439012', {
+      pax: 150,
+    });
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({
@@ -3162,18 +3093,15 @@ describe('DELETE /events/:id/sessions/:sid/items/:iid', () => {
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const { token: creatorToken } = await seedCaller();
-      const { eventId, sessionId, itemId } = await seedEventWithItem(creatorToken);
-      const { token } = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const { token: creatorToken } = await seedCaller();
+    const { eventId, sessionId, itemId } = await seedEventWithItem(creatorToken);
+    const { token } = await seedCaller(role);
 
-      const response = await deleteItemAs(token, eventId, sessionId, itemId);
+    const response = await deleteItemAs(token, eventId, sessionId, itemId);
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent item id', async () => {
     const { token } = await seedCaller();
@@ -3223,7 +3151,7 @@ describe('GET /calendar', () => {
       const response = await getCalendarAs(token, 9, 2026);
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
   it('returns 400 for an out-of-range month', async () => {
@@ -3244,14 +3172,14 @@ describe('GET /calendar', () => {
     expect(response.body).toEqual([]);
   });
 
-  it("returns a fixture 3-day session for a query naming a date in the middle of its range, even though the query never names that date specifically", async () => {
+  it('returns a fixture 3-day session for a query naming a date in the middle of its range, even though the query never names that date specifically', async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
     const created = await createEventAs(token, validPayload(manager.id));
     await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ startDate: '2026-09-12', endDate: '2026-09-14' }),
+      validSessionPayload({ startDate: '2026-09-12', endDate: '2026-09-14' })
     );
 
     const response = await getCalendarAs(token, 9, 2026);
@@ -3278,7 +3206,7 @@ describe('GET /calendar', () => {
     await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ startDate: '2026-09-29', endDate: '2026-10-01' }),
+      validSessionPayload({ startDate: '2026-09-29', endDate: '2026-10-01' })
     );
 
     const septemberResponse = await getCalendarAs(token, 9, 2026);
@@ -3295,7 +3223,7 @@ describe('GET /calendar', () => {
     const session = await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ startDate: '2026-09-12', endDate: '2026-09-12' }),
+      validSessionPayload({ startDate: '2026-09-12', endDate: '2026-09-12' })
     );
     await patchSessionAs(token, created.body.id, session.body.id, { sessionStatus: 'Cancelled' });
 
@@ -3311,7 +3239,7 @@ describe('GET /calendar', () => {
     await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ startDate: '2026-08-01', endDate: '2026-08-05' }),
+      validSessionPayload({ startDate: '2026-08-01', endDate: '2026-08-05' })
     );
 
     const response = await getCalendarAs(token, 9, 2026);
@@ -3326,7 +3254,7 @@ describe('GET /calendar', () => {
     await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ sessionType: 'Haldi', venue: 'Lawn', startDate: '2026-09-12', endDate: '2026-09-12' }),
+      validSessionPayload({ sessionType: 'Haldi', venue: 'Lawn', startDate: '2026-09-12', endDate: '2026-09-12' })
     );
     await postSessionAs(
       token,
@@ -3336,7 +3264,7 @@ describe('GET /calendar', () => {
         venue: 'Banquet Hall',
         startDate: '2026-09-12',
         endDate: '2026-09-12',
-      }),
+      })
     );
 
     const response = await getCalendarAs(token, 9, 2026);

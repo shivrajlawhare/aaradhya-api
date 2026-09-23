@@ -106,7 +106,7 @@ describe('filterEventForRole', () => {
     expect(result).toEqual(fixtureEvent);
   });
 
-  it('venue is genuinely visible to all four roles (this story\'s own edge case)', () => {
+  it("venue is genuinely visible to all four roles (this story's own edge case)", () => {
     for (const role of [Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception]) {
       const result = filterEventForRole(fixtureEvent, role);
       expect(result.sessions[0]?.venue).toBe('Lawn');
@@ -208,9 +208,9 @@ describe('filterEventForRole', () => {
     });
   });
 
-  it('produces four independently distinct response shapes for the same fixture Event (this story\'s own AC)', () => {
+  it("produces four independently distinct response shapes for the same fixture Event (this story's own AC)", () => {
     const shapes = [Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception].map((role) =>
-      JSON.stringify(filterEventForRole(fixtureEvent, role)),
+      JSON.stringify(filterEventForRole(fixtureEvent, role))
     );
 
     expect(new Set(shapes).size).toBe(4);

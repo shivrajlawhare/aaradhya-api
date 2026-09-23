@@ -14,7 +14,9 @@
     "test": "vitest run",
     "seed:admin": "tsx scripts/seed-admin.ts",
     "seed:config": "tsx scripts/seed-config.ts",
-    "postinstall": "playwright install --with-deps chromium"
+    "postinstall": "playwright install --with-deps chromium",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@node-rs/argon2": "^2.1.0",
@@ -29,11 +31,13 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.4.0",
     "@types/supertest": "^7.2.1",
     "mongodb-memory-server": "^11.2.0",
+    "prettier": "^3.9.9",
     "supertest": "^7.2.2",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",

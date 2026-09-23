@@ -1,8 +1,8 @@
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
-import { Venue } from '../../src/models/venue.js';
 import { Role, User } from '../../src/models/user.js';
+import { Venue } from '../../src/models/venue.js';
 import { signSessionToken } from '../../src/services/token.js';
 import { clearCollections, connectTestDb, disconnectTestDb } from '../support/db.js';
 
@@ -48,7 +48,7 @@ describe('GET /venues', () => {
       const response = await listVenuesAs(token);
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
   it('returns both active and inactive entries', async () => {

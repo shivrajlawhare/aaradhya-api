@@ -1,4 +1,4 @@
-import { Schema, model, type HydratedDocument } from 'mongoose';
+import { type HydratedDocument, model, Schema } from 'mongoose';
 
 // SRS §4.6 — organization-wide, shared across all Events/Sessions/Items.
 // `created_via` (the SRS's own field, distinguishing ad-hoc-added-during-
@@ -22,7 +22,7 @@ const menuItemSchema = new Schema<MenuItemAttributes>(
     name: { type: String, required: true, trim: true },
     defaultCostPerPlate: { type: Number, required: true, default: 0, min: 0 },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 // strength: 2 makes MongoDB's own uniqueness check case-insensitive

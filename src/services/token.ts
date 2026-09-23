@@ -1,4 +1,4 @@
-import { SignJWT, jwtVerify } from 'jose';
+import { jwtVerify, SignJWT } from 'jose';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { Role } from '../models/user.js';

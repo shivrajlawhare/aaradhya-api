@@ -19,10 +19,7 @@ const seedCaller = async (role: Role = Role.EventManager) => {
 };
 
 const listChangeLogAs = (token: string, entityType: string, entityId: string) =>
-  request(app)
-    .get('/change-log')
-    .query({ entityType, entityId })
-    .set('Authorization', `Bearer ${token}`);
+  request(app).get('/change-log').query({ entityType, entityId }).set('Authorization', `Bearer ${token}`);
 
 beforeAll(connectTestDb);
 afterEach(clearCollections);
@@ -30,23 +27,18 @@ afterAll(disconnectTestDb);
 
 describe('GET /change-log', () => {
   it('returns 401 with no token', async () => {
-    const response = await request(app)
-      .get('/change-log')
-      .query({ entityType: 'Event', entityId: 'event-1' });
+    const response = await request(app).get('/change-log').query({ entityType: 'Event', entityId: 'event-1' });
 
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const token = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const token = await seedCaller(role);
 
-      const response = await listChangeLogAs(token, 'Event', 'event-1');
+    const response = await listChangeLogAs(token, 'Event', 'event-1');
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 400 listing entityId when it is missing', async () => {
     const token = await seedCaller();
@@ -59,7 +51,7 @@ describe('GET /change-log', () => {
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
     expect(response.body.error.details).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'entityId' })]),
+      expect.arrayContaining([expect.objectContaining({ field: 'entityId' })])
     );
   });
 

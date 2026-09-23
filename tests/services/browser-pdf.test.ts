@@ -41,7 +41,7 @@ describe('renderPdfFromUrl', () => {
       res.end(
         '<!doctype html><html><body><h1>Hello</h1><script>' +
           'fetch("/report-session?value=" + encodeURIComponent(localStorage.getItem("aaradhya.session") ?? ""));' +
-          '</script></body></html>',
+          '</script></body></html>'
       );
     });
     await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -67,7 +67,10 @@ describe('renderPdfFromUrl', () => {
   });
 
   it('injects the given session into localStorage on the target origin before the page loads', async () => {
-    const session = { token: 'fake-token-for-this-test-only', user: { id: 'user-1', name: 'Test User', role: 'EventManager' as never } };
+    const session = {
+      token: 'fake-token-for-this-test-only',
+      user: { id: 'user-1', name: 'Test User', role: 'EventManager' as never },
+    };
 
     await renderPdfFromUrl(origin, '/', session);
 
@@ -75,15 +78,16 @@ describe('renderPdfFromUrl', () => {
   });
 
   it('throws instead of silently returning a PDF of the page when redirected to /login', async () => {
-    const session = { token: 'rejected-token', user: { id: 'user-1', name: 'Test User', role: 'EventManager' as never } };
+    const session = {
+      token: 'rejected-token',
+      user: { id: 'user-1', name: 'Test User', role: 'EventManager' as never },
+    };
 
     await expect(renderPdfFromUrl(origin, '/protected', session)).rejects.toThrow(/redirected to \/login/);
   });
 
   it('serves several concurrent renders without deadlocking (the concurrency cap queues, not drops, requests)', async () => {
-    const results = await Promise.all(
-      Array.from({ length: 5 }, () => renderPdfFromUrl(origin, '/', undefined)),
-    );
+    const results = await Promise.all(Array.from({ length: 5 }, () => renderPdfFromUrl(origin, '/', undefined)));
 
     expect(results).toHaveLength(5);
     for (const pdf of results) {

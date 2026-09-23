@@ -23,9 +23,7 @@ export const config = {
   // Origins allowed to call this API cross-origin (aaradhya-web's dev server
   // by default — Vite on 5173). Comma-separated; add a deployed frontend
   // origin here once one exists.
-  corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
-    .split(',')
-    .map((origin) => origin.trim()),
+  corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173').split(',').map((origin) => origin.trim()),
   // aaradhya-web's own origin — services/browser-pdf.ts navigates a
   // headless browser here to render the Quotation PDF from the real,
   // already-running frontend app (Aaradhya_Quotation_PDF_Strategy.md §4),

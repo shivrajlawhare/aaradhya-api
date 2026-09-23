@@ -1,5 +1,5 @@
-import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from '@ts-rest/express';
 import type { ServerInferResponses } from '@ts-rest/core';
+import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from '@ts-rest/express';
 import type { contract } from '../contract/index.js';
 import { RoomType, type RoomTypeDocument } from '../models/room-type.js';
 import { isDuplicateKeyError } from '../utils/mongo-errors.js';

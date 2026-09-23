@@ -103,7 +103,7 @@ describe('GET /dashboard', () => {
       const response = await getDashboardAs(token);
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
   it('returns all-zero counts and an empty upcoming-events list with no Events at all', async () => {
@@ -117,7 +117,7 @@ describe('GET /dashboard', () => {
     });
   });
 
-  it('counts today\'s events from real Session overlap data, not a naive status count alone', async () => {
+  it("counts today's events from real Session overlap data, not a naive status count alone", async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
 
@@ -135,14 +135,14 @@ describe('GET /dashboard', () => {
     expect(response.body.counts.todaysEvents).toBe(1);
   });
 
-  it('includes a multi-day Session ending exactly at today\'s UTC midnight — inclusive boundary, matching STORY-034', async () => {
+  it("includes a multi-day Session ending exactly at today's UTC midnight — inclusive boundary, matching STORY-034", async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
     const created = await createEventAs(token, validPayload(manager.id));
     await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ startDate: isoDate(yesterday), endDate: isoDate(today) }),
+      validSessionPayload({ startDate: isoDate(yesterday), endDate: isoDate(today) })
     );
 
     const response = await getDashboardAs(token);
@@ -152,7 +152,7 @@ describe('GET /dashboard', () => {
     expect(response.body.counts.upcoming).toBe(0);
   });
 
-  it('excludes a Cancelled Session from today\'s count even though it overlaps today', async () => {
+  it("excludes a Cancelled Session from today's count even though it overlaps today", async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
     const created = await createEventAs(token, validPayload(manager.id));
@@ -164,7 +164,7 @@ describe('GET /dashboard', () => {
     expect(response.body.counts.todaysEvents).toBe(0);
   });
 
-  it('excludes a Cancelled Event from today\'s/upcoming even with a stale Active session', async () => {
+  it("excludes a Cancelled Event from today's/upcoming even with a stale Active session", async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
     const created = await createEventAs(token, validPayload(manager.id));
@@ -188,7 +188,7 @@ describe('GET /dashboard', () => {
     await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+      validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) })
     );
 
     const response = await getDashboardAs(token);
@@ -205,7 +205,7 @@ describe('GET /dashboard', () => {
     await postSessionAs(
       token,
       soonEvent.body.id,
-      validSessionPayload({ venue: 'Poolside', pax: 50, startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+      validSessionPayload({ venue: 'Poolside', pax: 50, startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) })
     );
     const laterEvent = await createEventAs(token, validPayload(manager.id, { eventFamilyType: 'Later' }));
     await postSessionAs(
@@ -216,7 +216,7 @@ describe('GET /dashboard', () => {
         pax: 100,
         startDate: isoDate(dayAfterTomorrow),
         endDate: isoDate(dayAfterTomorrow),
-      }),
+      })
     );
 
     const response = await getDashboardAs(token);
@@ -238,12 +238,16 @@ describe('GET /dashboard', () => {
     await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ venue: 'Later Venue', startDate: isoDate(dayAfterTomorrow), endDate: isoDate(dayAfterTomorrow) }),
+      validSessionPayload({
+        venue: 'Later Venue',
+        startDate: isoDate(dayAfterTomorrow),
+        endDate: isoDate(dayAfterTomorrow),
+      })
     );
     await postSessionAs(
       token,
       created.body.id,
-      validSessionPayload({ venue: 'Sooner Venue', startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+      validSessionPayload({ venue: 'Sooner Venue', startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) })
     );
 
     const response = await getDashboardAs(token);
@@ -260,12 +264,12 @@ describe('GET /dashboard', () => {
         managerToken,
         validPayload(manager.id, {
           clientContacts: [{ name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' }],
-        }),
+        })
       );
       await postSessionAs(
         managerToken,
         created.body.id,
-        validSessionPayload({ venue: 'Lawn', pax: 150, startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+        validSessionPayload({ venue: 'Lawn', pax: 150, startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) })
       );
       return { managerToken };
     };
@@ -308,7 +312,7 @@ describe('GET /dashboard', () => {
           const token = await tokenForRole(role, managerToken);
           const response = await getDashboardAs(token);
           return JSON.stringify(response.body.counts);
-        }),
+        })
       );
 
       expect(new Set(counts).size).toBe(1);
@@ -323,13 +327,13 @@ describe('GET /dashboard', () => {
       const session = await postSessionAs(
         managerToken,
         created.body.id,
-        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) })
       );
       await postItemAs(
         managerToken,
         created.body.id,
         session.body.id,
-        validMealItemPayload({ startTime: '12:00', endTime: '14:00' }),
+        validMealItemPayload({ startTime: '12:00', endTime: '14:00' })
       );
 
       const { token: fnbToken } = await seedCaller(Role.FnBHead);
@@ -352,7 +356,7 @@ describe('GET /dashboard', () => {
       await postSessionAs(
         managerToken,
         created.body.id,
-        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) })
       );
 
       const { token: fnbToken } = await seedCaller(Role.FnBHead);
@@ -361,14 +365,14 @@ describe('GET /dashboard', () => {
       expect(response.body.upcomingEvents[0]).toHaveProperty('meals', []);
     });
 
-    it('excludes an Event whose only qualifying Session is Cancelled, for F&B Head same as every other role (STORY-034/047\'s Active-only rule)', async () => {
+    it("excludes an Event whose only qualifying Session is Cancelled, for F&B Head same as every other role (STORY-034/047's Active-only rule)", async () => {
       const { token: managerToken } = await seedCaller();
       const manager = await seedEventManager();
       const created = await createEventAs(managerToken, validPayload(manager.id));
       const session = await postSessionAs(
         managerToken,
         created.body.id,
-        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) })
       );
       await postItemAs(managerToken, created.body.id, session.body.id, validMealItemPayload());
       await patchSessionAs(managerToken, created.body.id, session.body.id, { sessionStatus: 'Cancelled' });
@@ -393,7 +397,7 @@ describe('GET /dashboard', () => {
           startDate: isoDate(tomorrow),
           endDate: isoDate(tomorrow),
           setup: { seating: 'Theatre', tableCount: 10, chairCount: 100 },
-        }),
+        })
       );
       await patchAccommodationAs(managerToken, created.body.id, {
         roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 3 }],
@@ -435,7 +439,7 @@ describe('GET /dashboard', () => {
           startDate: isoDate(tomorrow),
           endDate: isoDate(tomorrow),
           setup: { seating: 'Theatre' },
-        }),
+        })
       );
       await patchAccommodationAs(managerToken, created.body.id, {
         roomLines: [{ roomType: 'Single', occupancy: 1, tariff: 2000, noOfRooms: 2 }],
@@ -450,14 +454,14 @@ describe('GET /dashboard', () => {
       expect(response.body.upcomingEvents[0]).not.toHaveProperty('setup');
     });
 
-    it('excludes an Event whose only qualifying Session is Cancelled, for Housekeeping too (STORY-034/047\'s Active-only rule)', async () => {
+    it("excludes an Event whose only qualifying Session is Cancelled, for Housekeeping too (STORY-034/047's Active-only rule)", async () => {
       const { token: managerToken } = await seedCaller();
       const manager = await seedEventManager();
       const created = await createEventAs(managerToken, validPayload(manager.id));
       const session = await postSessionAs(
         managerToken,
         created.body.id,
-        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) })
       );
       await patchSessionAs(managerToken, created.body.id, session.body.id, { sessionStatus: 'Cancelled' });
 
@@ -480,12 +484,12 @@ describe('GET /dashboard', () => {
             { name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' },
             { name: 'Rohan Shah', contactNumber: '9876500000', role: 'Groom' },
           ],
-        }),
+        })
       );
       const session = await postSessionAs(
         managerToken,
         created.body.id,
-        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) })
       );
       await postItemAs(managerToken, created.body.id, session.body.id, validMealItemPayload());
       await patchAccommodationAs(managerToken, created.body.id, {
@@ -522,7 +526,7 @@ describe('GET /dashboard', () => {
       const session = await postSessionAs(
         managerToken,
         created.body.id,
-        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) }),
+        validSessionPayload({ startDate: isoDate(tomorrow), endDate: isoDate(tomorrow) })
       );
       await patchSessionAs(managerToken, created.body.id, session.body.id, { sessionStatus: 'Cancelled' });
 

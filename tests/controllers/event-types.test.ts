@@ -48,7 +48,7 @@ describe('GET /event-types', () => {
       const response = await listEventTypesAs(token);
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
   it('returns both active and inactive entries', async () => {

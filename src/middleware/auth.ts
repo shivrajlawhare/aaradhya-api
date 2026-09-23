@@ -30,7 +30,7 @@ const bearerToken = (header: string | undefined): string | undefined => {
 export const authenticate = async (
   req: Request<any, any, any, any>,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ): Promise<void> => {
   const token = bearerToken(req.headers.authorization);
   if (!token) {

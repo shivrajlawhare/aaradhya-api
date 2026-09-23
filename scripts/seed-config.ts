@@ -41,7 +41,7 @@ const seedConfig = async (): Promise<void> => {
     await Venue.findOneAndUpdate(
       { name: venue.name, active: true },
       { ...venue, active: true },
-      { returnDocument: 'after', upsert: true, runValidators: true, collation: { locale: 'en', strength: 2 } },
+      { returnDocument: 'after', upsert: true, runValidators: true, collation: { locale: 'en', strength: 2 } }
     );
   }
 
@@ -49,7 +49,7 @@ const seedConfig = async (): Promise<void> => {
     await RoomType.findOneAndUpdate(
       { name: roomType.name, active: true },
       { ...roomType, active: true },
-      { returnDocument: 'after', upsert: true, runValidators: true, collation: { locale: 'en', strength: 2 } },
+      { returnDocument: 'after', upsert: true, runValidators: true, collation: { locale: 'en', strength: 2 } }
     );
   }
 

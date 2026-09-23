@@ -1,4 +1,4 @@
-import { Schema, model } from 'mongoose';
+import { model, Schema } from 'mongoose';
 
 interface EventIdCounterAttributes {
   _id: string;
@@ -16,7 +16,4 @@ const eventIdCounterSchema = new Schema<EventIdCounterAttributes>({
   seq: { type: Number, required: true, default: 0 },
 });
 
-export const EventIdCounter = model<EventIdCounterAttributes>(
-  'EventIdCounter',
-  eventIdCounterSchema,
-);
+export const EventIdCounter = model<EventIdCounterAttributes>('EventIdCounter', eventIdCounterSchema);

@@ -1,6 +1,6 @@
-import { Schema, model, Types, type HydratedDocument } from 'mongoose';
-import { Role, User } from './user.js';
+import { type HydratedDocument, model, Schema, Types } from 'mongoose';
 import { generateEventId } from '../services/event-id.js';
+import { Role, User } from './user.js';
 
 /** SRS §5.1 FR-EVT-6 — the only four states an Event can be in. */
 export enum EventStatus {
@@ -299,7 +299,7 @@ const accommodationSchema = new Schema<AccommodationAttributes>(
     checkOut: { type: Date },
     roomLines: { type: [roomLineSchema], default: [] },
   },
-  { _id: false },
+  { _id: false }
 );
 
 // min: 0 on every money field — "money in can't be negative" (this story's
@@ -314,7 +314,7 @@ const paymentSchema = new Schema<PaymentAttributes>(
     advancePaidDate: { type: Date },
     paymentMode: { type: String, trim: true },
   },
-  { _id: false },
+  { _id: false }
 );
 
 // Each item defaults to false ("not received yet") — a brand-new Event
@@ -331,7 +331,7 @@ const documentsChecklistSchema = new Schema<DocumentsChecklistAttributes>(
     passportPhotos: { type: Boolean, required: true, default: false },
     weddingCard: { type: Boolean, required: true, default: false },
   },
-  { _id: false },
+  { _id: false }
 );
 
 // Every field defaults to 0, same "always instantiated" shape paymentSchema
@@ -345,7 +345,7 @@ const extrasSchema = new Schema<ExtrasAttributes>(
     photographer: { type: Number, required: true, default: 0, min: 0 },
     bhatji: { type: Number, required: true, default: 0, min: 0 },
   },
-  { _id: false },
+  { _id: false }
 );
 
 // No `_id: false` here — unlike roomLineSchema, this array element still
@@ -374,7 +374,7 @@ const sessionSetupSchema = new Schema<SessionSetupAttributes>(
     brideGroomSeating: { type: Boolean, required: true, default: false },
     notes: { type: String, trim: true },
   },
-  { _id: false },
+  { _id: false }
 );
 
 // Returns a Mongoose `required` function for "only required when this
@@ -514,7 +514,7 @@ const eventSchema = new Schema<EventAttributes>(
     sessions: { type: [sessionSchema], default: [] },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 eventSchema.index({ eventId: 1 }, { unique: true });

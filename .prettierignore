@@ -1,0 +1,8 @@
+# Prose docs — kept hand-formatted, not run through Prettier's markdown
+# formatter (which reflows tables/emphasis markers in ways that don't match
+# how these were actually written).
+*.md
+docs/
+
+dist/
+coverage/

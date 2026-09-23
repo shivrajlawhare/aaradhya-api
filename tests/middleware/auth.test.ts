@@ -1,6 +1,6 @@
 import express from 'express';
-import request from 'supertest';
 import { SignJWT } from 'jose';
+import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { authenticate, requireRole } from '../../src/middleware/auth.js';
 import { Role, User } from '../../src/models/user.js';

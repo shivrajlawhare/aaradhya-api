@@ -1,27 +1,28 @@
-import { randomUUID } from 'node:crypto';
-import { Error as MongooseError, Types, type QueryFilter } from 'mongoose';
-import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from '@ts-rest/express';
 import type { ServerInferRequest, ServerInferResponses } from '@ts-rest/core';
+import type { AppRouteMutationImplementation, AppRouteQueryImplementation } from '@ts-rest/express';
+import { Error as MongooseError, type QueryFilter, Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
+import { config } from '../config.js';
 import type { contract } from '../contract/index.js';
+import { ChangeLogEntry } from '../models/change-log-entry.js';
 import {
-  DOCUMENT_CHECKLIST_ITEM_KEYS,
-  Event,
-  EventStatus,
-  ItemType,
-  SessionStatus,
   type AccommodationAttributes,
   type ClientContactAttributes,
+  DOCUMENT_CHECKLIST_ITEM_KEYS,
   type DocumentsChecklistAttributes,
+  Event,
   type EventAttributes,
   type EventDocument,
+  EventStatus,
   type ExtrasAttributes,
+  ItemType,
   type ManualLineItemAttributes,
   type PaymentAttributes,
   type RoomLineAttributes,
   type SessionAttributes,
   type SessionSetupAttributes,
+  SessionStatus,
 } from '../models/event.js';
-import { ChangeLogEntry } from '../models/change-log-entry.js';
 import { MenuItem, type MenuItemDocument } from '../models/menu-item.js';
 import { User } from '../models/user.js';
 import {
@@ -36,9 +37,13 @@ import { filterEventForRole } from '../services/event-visibility.js';
 import { computeTotalCost } from '../services/item.js';
 import { computeBalance } from '../services/payment.js';
 import { computeTotalCostSummary } from '../services/quotation.js';
-import { computeDurationDays, computeIsMultiDay, computeMonthRange, sessionOverlapsMonth } from '../services/session.js';
+import {
+  computeDurationDays,
+  computeIsMultiDay,
+  computeMonthRange,
+  sessionOverlapsMonth,
+} from '../services/session.js';
 import { signSessionToken } from '../services/token.js';
-import { config } from '../config.js';
 import { isDuplicateKeyError } from '../utils/mongo-errors.js';
 import { escapeRegExp } from '../utils/regex.js';
 
@@ -310,10 +315,8 @@ const toPlainContact = ({ name, contactNumber, role }: ClientContactAttributes) 
   role,
 });
 
-const areClientContactsEqual = (
-  stored: ClientContactAttributes[],
-  submitted: ClientContactAttributes[],
-): boolean => JSON.stringify(stored.map(toPlainContact)) === JSON.stringify(submitted.map(toPlainContact));
+const areClientContactsEqual = (stored: ClientContactAttributes[], submitted: ClientContactAttributes[]): boolean =>
+  JSON.stringify(stored.map(toPlainContact)) === JSON.stringify(submitted.map(toPlainContact));
 
 // Drops the subdocument's own `_id` so a stored room line compares equal to
 // a plain submitted line shaped the same as roomLineInputSchema.
@@ -352,7 +355,7 @@ const isInvalidEventManagerError = (error: unknown): boolean =>
 // Event.create() call below — every field on it is embedded, not
 // referenced, so there's no multi-document transaction to reason about.
 const buildSessionsInput = async (
-  sessions: ServerInferRequest<typeof contract.createEvent>['body']['sessions'],
+  sessions: ServerInferRequest<typeof contract.createEvent>['body']['sessions']
 ): Promise<Record<string, unknown>[] | 'invalid-menu-item-reference'> => {
   const resolvedSessions: Record<string, unknown>[] = [];
   for (const session of sessions ?? []) {
@@ -403,10 +406,7 @@ const buildSessionsInput = async (
   return resolvedSessions;
 };
 
-export const createEvent: AppRouteMutationImplementation<typeof contract.createEvent> = async ({
-  body,
-  req,
-}) => {
+export const createEvent: AppRouteMutationImplementation<typeof contract.createEvent> = async ({ body, req }) => {
   if (!req.user) {
     // Unreachable — eventManagerOnly (router.ts) runs authenticate before
     // this handler ever does; guarded instead of asserted past.
@@ -523,7 +523,7 @@ interface PendingChange {
 // controller is exactly the caller that line is talking about.
 const buildEventUpdate = (
   existing: EventDocument,
-  body: UpdateEventBody,
+  body: UpdateEventBody
 ): { update: Record<string, unknown>; changes: PendingChange[] } => {
   const update: Record<string, unknown> = {};
   const changes: PendingChange[] = [];
@@ -544,10 +544,7 @@ const buildEventUpdate = (
       newValue: body.eventManager,
     });
   }
-  if (
-    body.clientContacts !== undefined &&
-    !areClientContactsEqual(existing.clientContacts, body.clientContacts)
-  ) {
+  if (body.clientContacts !== undefined && !areClientContactsEqual(existing.clientContacts, body.clientContacts)) {
     update.clientContacts = body.clientContacts;
     changes.push({
       field: 'clientContacts',
@@ -626,8 +623,8 @@ export const updateEvent: AppRouteMutationImplementation<typeof contract.updateE
         newValue: change.newValue,
         changedByUserId,
         groupId,
-      }),
-    ),
+      })
+    )
   );
 
   return { status: 200, body: toPublicEvent(updated) };
@@ -680,7 +677,7 @@ const areDatesEqual = (a: Date | undefined, b: Date | undefined): boolean =>
 // would misrepresent what's actually persisted.
 const buildAccommodationUpdate = (
   existing: EventDocument,
-  body: UpdateEventAccommodationBody,
+  body: UpdateEventAccommodationBody
 ): { update: Record<string, unknown>; changes: PendingChange[] } => {
   const currentAccommodation = existing.accommodation;
   const update: Record<string, unknown> = {};
@@ -698,10 +695,7 @@ const buildAccommodationUpdate = (
       newValue: body.checkOut,
     });
   }
-  if (
-    body.roomLines !== undefined &&
-    !areRoomLinesEqual(currentAccommodation?.roomLines ?? [], body.roomLines)
-  ) {
+  if (body.roomLines !== undefined && !areRoomLinesEqual(currentAccommodation?.roomLines ?? [], body.roomLines)) {
     update['accommodation.roomLines'] = body.roomLines;
     changes.push({
       field: 'roomLines',
@@ -759,8 +753,8 @@ export const updateEventAccommodation: AppRouteMutationImplementation<
         newValue: change.newValue,
         changedByUserId,
         groupId,
-      }),
-    ),
+      })
+    )
   );
 
   return { status: 200, body: toPublicAccommodation(updated.accommodation) };
@@ -773,7 +767,7 @@ export const updateEventAccommodation: AppRouteMutationImplementation<
 // without the other already being real is never rejected here.
 const buildPaymentUpdate = (
   existing: EventDocument,
-  body: UpdateEventPaymentBody,
+  body: UpdateEventPaymentBody
 ): { update: Record<string, unknown>; changes: PendingChange[] } => {
   const current = existing.payment;
   const update: Record<string, unknown> = {};
@@ -859,8 +853,8 @@ export const updateEventPayment: AppRouteMutationImplementation<typeof contract.
         newValue: change.newValue,
         changedByUserId,
         groupId,
-      }),
-    ),
+      })
+    )
   );
 
   return { status: 200, body: toPublicPayment(updated.payment) };
@@ -873,7 +867,7 @@ export const updateEventPayment: AppRouteMutationImplementation<typeof contract.
 // compares) forcing those other three into their more repetitive shape.
 const buildDocumentsChecklistUpdate = (
   existing: EventDocument,
-  body: UpdateDocumentsChecklistBody,
+  body: UpdateDocumentsChecklistBody
 ): { update: Record<string, unknown>; changes: PendingChange[] } => {
   const current = existing.documentsChecklist;
   const update: Record<string, unknown> = {};
@@ -936,8 +930,8 @@ export const updateDocumentsChecklist: AppRouteMutationImplementation<
         newValue: change.newValue,
         changedByUserId,
         groupId,
-      }),
-    ),
+      })
+    )
   );
 
   return { status: 200, body: toPublicDocumentsChecklist(updated.documentsChecklist) };
@@ -951,7 +945,7 @@ export const updateDocumentsChecklist: AppRouteMutationImplementation<
 // threading one would be.
 const buildExtrasUpdate = (
   existing: EventDocument,
-  body: UpdateEventExtrasBody,
+  body: UpdateEventExtrasBody
 ): { update: Record<string, unknown>; changes: PendingChange[] } => {
   const current = existing.extras;
   const update: Record<string, unknown> = {};
@@ -1021,8 +1015,8 @@ export const updateEventExtras: AppRouteMutationImplementation<typeof contract.u
         newValue: change.newValue,
         changedByUserId,
         groupId,
-      }),
-    ),
+      })
+    )
   );
 
   return { status: 200, body: toPublicExtras(updated.extras) };
@@ -1065,7 +1059,7 @@ const computeEventQuotationSummary = (event: EventDocument) =>
       // toPublicAccommodation's own totalDaysForMath documents.
       event.accommodation?.checkIn && event.accommodation.checkOut
         ? computeTotalDays(event.accommodation.checkIn, event.accommodation.checkOut)
-        : 1,
+        : 1
     ),
     extras: {
       decoration: event.extras.decoration,
@@ -1159,8 +1153,7 @@ const invalidSessionDateRange: Extract<CreateSessionResponse, { status: 400 }> =
 // reshaped into the same VALIDATION_ERROR envelope every other bad-body
 // case returns, matching isInvalidEventManagerError's own convention above.
 const isInvalidSessionDateRangeError = (error: unknown): boolean =>
-  error instanceof MongooseError.ValidationError &&
-  Object.keys(error.errors).some((path) => path.endsWith('.endDate'));
+  error instanceof MongooseError.ValidationError && Object.keys(error.errors).some((path) => path.endsWith('.endDate'));
 
 // No session_status accepted at creation — a newly added Session always
 // starts Active (sessionSchema's own default), matching this story's Flow
@@ -1400,8 +1393,8 @@ export const updateSession: AppRouteMutationImplementation<typeof contract.updat
         newValue: change.newValue,
         changedByUserId,
         groupId,
-      }),
-    ),
+      })
+    )
   );
 
   return { status: 200, body: toPublicSession(session) };
@@ -1419,9 +1412,7 @@ export const updateSession: AppRouteMutationImplementation<typeof contract.updat
 // ts-rest's AppRouteDeleteNoBody variant), which @ts-rest/express handles
 // with the same no-body handler signature GET routes use, despite the
 // method being DELETE.
-export const deleteSession: AppRouteQueryImplementation<typeof contract.deleteSession> = async ({
-  params,
-}) => {
+export const deleteSession: AppRouteQueryImplementation<typeof contract.deleteSession> = async ({ params }) => {
   const existing = await Event.findById(params.id);
   if (!existing) {
     return eventNotFound;
@@ -1467,7 +1458,7 @@ const findOrCreateMenuItemByName = async (name: string): Promise<MenuItemDocumen
 // Item by name persists it to the shared master list as part of this
 // same request).
 const resolveMenuItemRefs = async (
-  refs: readonly ({ id: string } | { name: string })[],
+  refs: readonly ({ id: string } | { name: string })[]
 ): Promise<Types.ObjectId[] | null> => {
   const ids: Types.ObjectId[] = [];
   for (const ref of refs) {
@@ -1489,11 +1480,7 @@ const resolveMenuItemRefs = async (
 // adding an Item is a creation, not a field-level edit, the same
 // "creation isn't logged, only edits are" precedent createSession
 // (STORY-027) already established.
-export const createItem: AppRouteMutationImplementation<typeof contract.createItem> = async ({
-  params,
-  body,
-  req,
-}) => {
+export const createItem: AppRouteMutationImplementation<typeof contract.createItem> = async ({ params, body, req }) => {
   if (!req.user) {
     // Unreachable — eventManagerOnly (router.ts) runs authenticate before
     // this handler ever does; guarded instead of asserted past.
@@ -1537,7 +1524,7 @@ export const createItem: AppRouteMutationImplementation<typeof contract.createIt
           venue: body.venue,
           startTime: body.startTime,
           endTime: body.endTime,
-        },
+        }
   );
   session.items.push(item);
 
@@ -1561,7 +1548,7 @@ export const createItem: AppRouteMutationImplementation<typeof contract.createIt
 const applyItemUpdate = async (
   session: SessionSubdocument,
   item: ItemSubdocument,
-  body: UpdateItemBody,
+  body: UpdateItemBody
 ): Promise<PendingChange[] | 'invalid-menu-item-reference'> => {
   const prefix = `sessions[${session.sessionType}].items[${item.mealName ?? item.eventName ?? ''}]`;
   const changes: PendingChange[] = [];
@@ -1624,11 +1611,7 @@ const applyItemUpdate = async (
 
 // Same last-write-wins, no-locking stance every other Event PATCH already
 // documents — nothing here adds optimistic concurrency either.
-export const updateItem: AppRouteMutationImplementation<typeof contract.updateItem> = async ({
-  params,
-  body,
-  req,
-}) => {
+export const updateItem: AppRouteMutationImplementation<typeof contract.updateItem> = async ({ params, body, req }) => {
   if (!req.user) {
     // Unreachable — eventManagerOnly (router.ts) runs authenticate before
     // this handler ever does; guarded instead of asserted past.
@@ -1677,8 +1660,8 @@ export const updateItem: AppRouteMutationImplementation<typeof contract.updateIt
         newValue: change.newValue,
         changedByUserId,
         groupId,
-      }),
-    ),
+      })
+    )
   );
 
   return { status: 200, body: toPublicItem(item) };
@@ -1742,7 +1725,7 @@ export const getCalendar: AppRouteQueryImplementation<typeof contract.getCalenda
           status: event.status,
           eventManager: event.eventManager.toString(),
         },
-      })),
+      }))
   );
 
   return { status: 200, body: sessions };

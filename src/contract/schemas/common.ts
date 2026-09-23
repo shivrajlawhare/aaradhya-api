@@ -18,5 +18,4 @@ export const apiErrorSchema = z.object({
 // references an existing document by id. A malformed id is a 400
 // (VALIDATION_ERROR) — it was never going to resolve to a real document,
 // so it isn't the same failure as "well-formed but doesn't exist" (404).
-export const objectIdSchema = (message = 'Invalid id.') =>
-  z.string().regex(/^[0-9a-fA-F]{24}$/, message);
+export const objectIdSchema = (message = 'Invalid id.') => z.string().regex(/^[0-9a-fA-F]{24}$/, message);

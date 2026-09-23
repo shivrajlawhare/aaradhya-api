@@ -29,8 +29,7 @@ const validPayload = (overrides: Record<string, unknown> = {}) => ({
 const createUserAs = (token: string, body: object) =>
   request(app).post('/users').set('Authorization', `Bearer ${token}`).send(body);
 
-const listUsersAs = (token: string) =>
-  request(app).get('/users').set('Authorization', `Bearer ${token}`);
+const listUsersAs = (token: string) => request(app).get('/users').set('Authorization', `Bearer ${token}`);
 
 const listEventManagersAs = (token: string) =>
   request(app).get('/event-managers').set('Authorization', `Bearer ${token}`);
@@ -49,16 +48,13 @@ describe('POST /users', () => {
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const token = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const token = await seedCaller(role);
 
-      const response = await createUserAs(token, validPayload());
+    const response = await createUserAs(token, validPayload());
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('creates the account and returns it without the password hash', async () => {
     const token = await seedCaller();
@@ -80,10 +76,7 @@ describe('POST /users', () => {
   it('hashes the supplied password so it verifies with argon2', async () => {
     const token = await seedCaller();
 
-    const response = await createUserAs(
-      token,
-      validPayload({ password: 'a-strong-initial-password' }),
-    );
+    const response = await createUserAs(token, validPayload({ password: 'a-strong-initial-password' }));
 
     const stored = await User.findById(response.body.id);
     if (!stored) {
@@ -123,22 +116,17 @@ describe('POST /users', () => {
     expect(response.status).toBe(409);
   });
 
-  it.each(['name', 'username', 'password', 'role'])(
-    'returns 400 listing %s when it is missing',
-    async (field) => {
-      const token = await seedCaller();
-      const payload: Record<string, unknown> = { ...validPayload() };
-      delete payload[field];
+  it.each(['name', 'username', 'password', 'role'])('returns 400 listing %s when it is missing', async (field) => {
+    const token = await seedCaller();
+    const payload: Record<string, unknown> = { ...validPayload() };
+    delete payload[field];
 
-      const response = await createUserAs(token, payload);
+    const response = await createUserAs(token, payload);
 
-      expect(response.status).toBe(400);
-      expect(response.body.error.code).toBe('VALIDATION_ERROR');
-      expect(response.body.error.details).toEqual(
-        expect.arrayContaining([expect.objectContaining({ field })]),
-      );
-    },
-  );
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(response.body.error.details).toEqual(expect.arrayContaining([expect.objectContaining({ field })]));
+  });
 
   it('returns 400 listing the field for an invalid role value', async () => {
     const token = await seedCaller();
@@ -146,9 +134,7 @@ describe('POST /users', () => {
     const response = await createUserAs(token, validPayload({ role: 'Admin' }));
 
     expect(response.status).toBe(400);
-    expect(response.body.error.details).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'role' })]),
-    );
+    expect(response.body.error.details).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'role' })]));
   });
 
   it('returns 400, not 201, for an empty-string password', async () => {
@@ -158,17 +144,14 @@ describe('POST /users', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.details).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'password' })]),
+      expect.arrayContaining([expect.objectContaining({ field: 'password' })])
     );
   });
 
   it('allows creating a second EventManager account — no system-enforced cap', async () => {
     const token = await seedCaller(Role.EventManager);
 
-    const response = await createUserAs(
-      token,
-      validPayload({ username: 'second-manager', role: Role.EventManager }),
-    );
+    const response = await createUserAs(token, validPayload({ username: 'second-manager', role: Role.EventManager }));
 
     expect(response.status).toBe(201);
     expect(response.body.role).toBe(Role.EventManager);
@@ -182,16 +165,13 @@ describe('GET /users', () => {
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const token = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const token = await seedCaller(role);
 
-      const response = await listUsersAs(token);
+    const response = await listUsersAs(token);
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns every account without a password hash', async () => {
     const token = await seedCaller();
@@ -224,7 +204,7 @@ describe('GET /event-managers', () => {
       const response = await listEventManagersAs(token);
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
   it('returns only {id, name} for every Event Manager, no username/active/timestamps', async () => {
@@ -248,7 +228,7 @@ describe('GET /event-managers', () => {
     const token = await seedCaller();
     const created = await createUserAs(
       token,
-      validPayload({ name: 'Former Manager', username: 'former', role: Role.EventManager }),
+      validPayload({ name: 'Former Manager', username: 'former', role: Role.EventManager })
     );
     await patchUserAs(token, created.body.id, { active: false });
 
@@ -263,25 +243,20 @@ describe('PATCH /users/:id', () => {
     const token = await seedCaller();
     const created = await createUserAs(token, validPayload());
 
-    const response = await request(app)
-      .patch(`/users/${created.body.id}`)
-      .send({ active: false });
+    const response = await request(app).patch(`/users/${created.body.id}`).send({ active: false });
 
     expect(response.status).toBe(401);
   });
 
-  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
-    'returns 403 for a caller with role %s',
-    async (role) => {
-      const managerToken = await seedCaller();
-      const created = await createUserAs(managerToken, validPayload());
-      const token = await seedCaller(role);
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const managerToken = await seedCaller();
+    const created = await createUserAs(managerToken, validPayload());
+    const token = await seedCaller(role);
 
-      const response = await patchUserAs(token, created.body.id, { active: false });
+    const response = await patchUserAs(token, created.body.id, { active: false });
 
-      expect(response.status).toBe(403);
-    },
-  );
+    expect(response.status).toBe(403);
+  });
 
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const token = await seedCaller();
@@ -346,9 +321,7 @@ describe('PATCH /users/:id', () => {
     await patchUserAs(token, created.body.id, { active: false, role: Role.FnBHead });
     const listResponse = await listUsersAs(token);
 
-    const updated = listResponse.body.find(
-      (account: { id: string }) => account.id === created.body.id,
-    );
+    const updated = listResponse.body.find((account: { id: string }) => account.id === created.body.id);
     expect(updated).toMatchObject({ active: false, role: Role.FnBHead });
   });
 

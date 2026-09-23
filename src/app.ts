@@ -1,6 +1,6 @@
+import { createExpressEndpoints } from '@ts-rest/express';
 import cors from 'cors';
 import express from 'express';
-import { createExpressEndpoints } from '@ts-rest/express';
 import { config } from './config.js';
 import { contract } from './contract/index.js';
 import { router } from './router.js';

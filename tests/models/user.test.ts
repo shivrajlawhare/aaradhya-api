@@ -34,17 +34,14 @@ describe('User model', () => {
     expect(user.role).toBe(Role.EventManager);
   });
 
-  it.each(['name', 'username', 'passwordHash', 'role'])(
-    'rejects a document missing %s',
-    async (field) => {
-      const data: Record<string, unknown> = { ...validUserData() };
-      delete data[field];
+  it.each(['name', 'username', 'passwordHash', 'role'])('rejects a document missing %s', async (field) => {
+    const data: Record<string, unknown> = { ...validUserData() };
+    delete data[field];
 
-      const error = await expectValidationError(User, data);
+    const error = await expectValidationError(User, data);
 
-      expect(error.errors).toHaveProperty(field);
-    },
-  );
+    expect(error.errors).toHaveProperty(field);
+  });
 
   it('rejects a role outside the four allowed values', async () => {
     const error = await expectValidationError(User, { ...validUserData(), role: 'Admin' });
@@ -61,9 +58,7 @@ describe('User model', () => {
   it('rejects a second document with the same username', async () => {
     await User.create(validUserData());
 
-    const error = await User.create({ ...validUserData(), name: 'Someone Else' }).catch(
-      (caught: unknown) => caught,
-    );
+    const error = await User.create({ ...validUserData(), name: 'Someone Else' }).catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({ code: 11000 });
   });
@@ -71,9 +66,7 @@ describe('User model', () => {
   it('treats username uniqueness as case-insensitive', async () => {
     await User.create({ ...validUserData(), username: 'Priya' });
 
-    const error = await User.create({ ...validUserData(), username: 'PRIYA' }).catch(
-      (caught: unknown) => caught,
-    );
+    const error = await User.create({ ...validUserData(), username: 'PRIYA' }).catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({ code: 11000 });
   });

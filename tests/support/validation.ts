@@ -1,4 +1,4 @@
-import { Error as MongooseError, type Model } from 'mongoose';
+import { type Model, Error as MongooseError } from 'mongoose';
 
 /**
  * Builds `data` into `Model`, runs schema validation, and asserts it fails —

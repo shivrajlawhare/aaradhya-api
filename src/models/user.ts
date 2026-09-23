@@ -1,4 +1,4 @@
-import { Schema, model, type HydratedDocument } from 'mongoose';
+import { type HydratedDocument, model, Schema } from 'mongoose';
 
 /**
  * The four fixed roles from SRS §3. Stored as their string values so a document
@@ -37,7 +37,7 @@ const userSchema = new Schema<UserAttributes>(
     // Deactivation without deleting history (SRS §4.9); flips both ways.
     active: { type: Boolean, default: true },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 userSchema.index({ username: 1 }, { unique: true });

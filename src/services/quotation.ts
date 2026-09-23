@@ -86,11 +86,15 @@ const sumFoodSubtotal = (sessions: QuotationSessionInput[]): number =>
           .reduce(
             (itemTotal, item) =>
               itemTotal +
-              computeTotalCost({ pax: item.pax ?? 0, costPerPlate: item.costPerPlate ?? 0, limitedSeating: item.limitedSeating }),
-            0,
+              computeTotalCost({
+                pax: item.pax ?? 0,
+                costPerPlate: item.costPerPlate ?? 0,
+                limitedSeating: item.limitedSeating,
+              }),
+            0
           ),
-      0,
-    ),
+      0
+    )
   );
 
 export const computeTotalCostSummary = ({
@@ -108,7 +112,7 @@ export const computeTotalCostSummary = ({
   const accommodationTotal = roundToCurrency(accommodationTotalCharges);
   const extraLineItemsTotal = (extras.extraLineItems ?? []).reduce((total, item) => total + item.amount, 0);
   const extrasTotal = roundToCurrency(
-    (extras.decoration ?? 0) + (extras.photographer ?? 0) + (extras.bhatji ?? 0) + extraLineItemsTotal,
+    (extras.decoration ?? 0) + (extras.photographer ?? 0) + (extras.bhatji ?? 0) + extraLineItemsTotal
   );
   const grandTotal = roundToCurrency(venueTotal + foodTotalInclGst + accommodationTotal + extrasTotal);
 

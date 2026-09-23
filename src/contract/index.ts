@@ -1,9 +1,15 @@
 import { initContract } from '@ts-rest/core';
 import { z } from 'zod';
-import { apiErrorSchema } from './schemas/common.js';
 import { loginBodySchema, loginResultSchema } from './schemas/auth.js';
 import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/change-log.js';
+import { apiErrorSchema } from './schemas/common.js';
 import { dashboardResultSchema } from './schemas/dashboard.js';
+import {
+  createEventTypeBodySchema,
+  eventTypeIdParamsSchema,
+  eventTypeResultSchema,
+  updateEventTypeBodySchema,
+} from './schemas/event-type.js';
 import {
   accommodationResultSchema,
   calendarSessionResultSchema,
@@ -38,12 +44,6 @@ import {
   menuItemResultSchema,
   updateMenuItemBodySchema,
 } from './schemas/menu-item.js';
-import {
-  createEventTypeBodySchema,
-  eventTypeIdParamsSchema,
-  eventTypeResultSchema,
-  updateEventTypeBodySchema,
-} from './schemas/event-type.js';
 import {
   createRoomTypeBodySchema,
   roomTypeIdParamsSchema,
@@ -175,7 +175,8 @@ export const contract = c.router({
     responses: {
       200: z.array(eventResultSchema),
     },
-    summary: 'Search Events by date-range overlap plus status/venue/eventManager/eventFamilyType filters (any authenticated caller)',
+    summary:
+      'Search Events by date-range overlap plus status/venue/eventManager/eventFamilyType filters (any authenticated caller)',
   },
   // 200 is filteredEventResultSchema, not eventResultSchema (STORY-046) —
   // the only route whose response shape genuinely depends on req.user.role;

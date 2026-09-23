@@ -1,14 +1,14 @@
 import { Types } from 'mongoose';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
+  type ClientContactAttributes,
   ClientContactRole,
   Event,
   EventStatus,
   ItemType,
   SeatingArrangement,
-  SessionStatus,
-  type ClientContactAttributes,
   type SessionAttributes,
+  SessionStatus,
 } from '../../src/models/event.js';
 import { Role, User } from '../../src/models/user.js';
 import { clearCollections, connectTestDb, disconnectTestDb } from '../support/db.js';
@@ -336,29 +336,26 @@ describe('Event model', () => {
     expect(error.errors).toHaveProperty('accommodation.roomLines.0.noOfRooms');
   });
 
-  it.each(['roomType', 'occupancy', 'tariff', 'noOfRooms'])(
-    'rejects a room line missing %s',
-    async (field) => {
-      const manager = await createEventManager();
-      const roomLine: Record<string, unknown> = {
-        roomType: 'Double',
-        occupancy: 2,
-        tariff: 5000,
-        noOfRooms: 1,
-      };
-      delete roomLine[field];
+  it.each(['roomType', 'occupancy', 'tariff', 'noOfRooms'])('rejects a room line missing %s', async (field) => {
+    const manager = await createEventManager();
+    const roomLine: Record<string, unknown> = {
+      roomType: 'Double',
+      occupancy: 2,
+      tariff: 5000,
+      noOfRooms: 1,
+    };
+    delete roomLine[field];
 
-      const error = await expectValidationError(Event, {
-        eventFamilyType: 'Wedding',
-        status: EventStatus.Tentative,
-        eventManager: manager.id,
-        createdBy: manager.id,
-        accommodation: { roomLines: [roomLine] },
-      });
+    const error = await expectValidationError(Event, {
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      accommodation: { roomLines: [roomLine] },
+    });
 
-      expect(error.errors).toHaveProperty(`accommodation.roomLines.0.${field}`);
-    },
-  );
+    expect(error.errors).toHaveProperty(`accommodation.roomLines.0.${field}`);
+  });
 
   it('defaults payment to 0/unset for a brand-new Event with no payment activity', async () => {
     const manager = await createEventManager();
@@ -443,7 +440,7 @@ describe('Event model', () => {
       });
 
       expect(error.errors).toHaveProperty(`payment.${field}`);
-    },
+    }
   );
 
   it('defaults every documentsChecklist item to false for a brand-new Event', async () => {
@@ -651,24 +648,21 @@ describe('Event model', () => {
     expect(error.errors).toHaveProperty('sessions.0.setup.seating');
   });
 
-  it.each(['sessionType', 'venue', 'startDate', 'endDate'])(
-    'rejects a session missing %s',
-    async (field) => {
-      const manager = await createEventManager();
-      const session: Record<string, unknown> = { ...validSession() };
-      delete session[field];
+  it.each(['sessionType', 'venue', 'startDate', 'endDate'])('rejects a session missing %s', async (field) => {
+    const manager = await createEventManager();
+    const session: Record<string, unknown> = { ...validSession() };
+    delete session[field];
 
-      const error = await expectValidationError(Event, {
-        eventFamilyType: 'Wedding',
-        status: EventStatus.Tentative,
-        eventManager: manager.id,
-        createdBy: manager.id,
-        sessions: [session],
-      });
+    const error = await expectValidationError(Event, {
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [session],
+    });
 
-      expect(error.errors).toHaveProperty(`sessions.0.${field}`);
-    },
-  );
+    expect(error.errors).toHaveProperty(`sessions.0.${field}`);
+  });
 
   it('accepts a valid Meal Item, with no event_name/venue required', async () => {
     const manager = await createEventManager();
@@ -750,24 +744,21 @@ describe('Event model', () => {
     expect(error.errors).toHaveProperty('sessions.0.items.0.type');
   });
 
-  it.each(['mealName', 'pax', 'costPerPlate'])(
-    'rejects a Meal Item missing %s',
-    async (field) => {
-      const manager = await createEventManager();
-      const item: Record<string, unknown> = { type: ItemType.Meal, mealName: 'Lunch', pax: 100, costPerPlate: 500 };
-      delete item[field];
+  it.each(['mealName', 'pax', 'costPerPlate'])('rejects a Meal Item missing %s', async (field) => {
+    const manager = await createEventManager();
+    const item: Record<string, unknown> = { type: ItemType.Meal, mealName: 'Lunch', pax: 100, costPerPlate: 500 };
+    delete item[field];
 
-      const error = await expectValidationError(Event, {
-        eventFamilyType: 'Wedding',
-        status: EventStatus.Tentative,
-        eventManager: manager.id,
-        createdBy: manager.id,
-        sessions: [{ ...validSession(), items: [item] }],
-      });
+    const error = await expectValidationError(Event, {
+      eventFamilyType: 'Wedding',
+      status: EventStatus.Tentative,
+      eventManager: manager.id,
+      createdBy: manager.id,
+      sessions: [{ ...validSession(), items: [item] }],
+    });
 
-      expect(error.errors).toHaveProperty(`sessions.0.items.0.${field}`);
-    },
-  );
+    expect(error.errors).toHaveProperty(`sessions.0.items.0.${field}`);
+  });
 
   // STORY-071 — eventName/venue are no longer required on an Event Item:
   // both reference quotations (docs/example_quatations/) print Ceremony
@@ -847,6 +838,6 @@ describe('Event model', () => {
       const error = await expectValidationError(Event, data);
 
       expect(error.errors).toHaveProperty(field);
-    },
+    }
   );
 });

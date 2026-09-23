@@ -3,6 +3,7 @@ import { contract } from './contract/index.js';
 import { login } from './controllers/auth.js';
 import { listChangeLog } from './controllers/change-log.js';
 import { getDashboard } from './controllers/dashboard.js';
+import { createEventType, listEventTypes, updateEventType } from './controllers/event-types.js';
 import {
   createEvent,
   createItem,
@@ -24,7 +25,6 @@ import {
   updateItem,
   updateSession,
 } from './controllers/events.js';
-import { createEventType, listEventTypes, updateEventType } from './controllers/event-types.js';
 import { checkHealth } from './controllers/health.js';
 import { createMenuItem, listMenuItems, updateMenuItem } from './controllers/menu-items.js';
 import { createRoomType, listRoomTypes, updateRoomType } from './controllers/room-types.js';

@@ -81,22 +81,19 @@ describe('logChange', () => {
     expect(entry.newValue).toBe('Confirmed');
   });
 
-  it.each(['entityType', 'entityId', 'field', 'changedBy'])(
-    'rejects a document missing %s',
-    async (field) => {
-      const data: Record<string, unknown> = {
-        entityType: 'Event',
-        entityId: 'event-1',
-        field: 'status',
-        changedBy: CHANGED_BY,
-      };
-      delete data[field];
+  it.each(['entityType', 'entityId', 'field', 'changedBy'])('rejects a document missing %s', async (field) => {
+    const data: Record<string, unknown> = {
+      entityType: 'Event',
+      entityId: 'event-1',
+      field: 'status',
+      changedBy: CHANGED_BY,
+    };
+    delete data[field];
 
-      const error = await expectValidationError(ChangeLogEntry, data);
+    const error = await expectValidationError(ChangeLogEntry, data);
 
-      expect(error.errors).toHaveProperty(field);
-    },
-  );
+    expect(error.errors).toHaveProperty(field);
+  });
 
   it('sets timestamp itself even if a caller-like value is passed straight to the model', async () => {
     const suppliedTimestamp = new Date('2000-01-01T00:00:00.000Z');

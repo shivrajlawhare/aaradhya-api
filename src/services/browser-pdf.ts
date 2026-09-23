@@ -66,11 +66,7 @@ const releaseRenderSlot = (): void => {
  * has no real browser session of its own (this backend process). Omit it
  * only for an already-public page.
  */
-export const renderPdfFromUrl = async (
-  origin: string,
-  path: string,
-  session?: BrowserPdfSession,
-): Promise<Buffer> => {
+export const renderPdfFromUrl = async (origin: string, path: string, session?: BrowserPdfSession): Promise<Buffer> => {
   await acquireRenderSlot();
   try {
     const browser = await chromium.launch();
@@ -93,7 +89,7 @@ export const renderPdfFromUrl = async (
             (
               globalThis as unknown as { localStorage: { setItem: (key: string, value: string) => void } }
             ).localStorage.setItem(key, value),
-          { key: SESSION_STORAGE_KEY, value: JSON.stringify(session) },
+          { key: SESSION_STORAGE_KEY, value: JSON.stringify(session) }
         );
       }
 
@@ -108,7 +104,7 @@ export const renderPdfFromUrl = async (
       const landedPath = new URL(page.url()).pathname;
       if (session && landedPath.startsWith('/login')) {
         throw new Error(
-          `renderPdfFromUrl: navigating to ${path} with a session ended up redirected to ${landedPath} — the injected session was rejected (expired/invalid token, or the target page's own auth guard).`,
+          `renderPdfFromUrl: navigating to ${path} with a session ended up redirected to ${landedPath} — the injected session was rejected (expired/invalid token, or the target page's own auth guard).`
         );
       }
 

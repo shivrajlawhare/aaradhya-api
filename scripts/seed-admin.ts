@@ -35,7 +35,7 @@ const seedAdmin = async (): Promise<void> => {
   const account = await User.findOneAndUpdate(
     { username: username.trim().toLowerCase() },
     { name, passwordHash, role, active: true },
-    { returnDocument: 'after', upsert: true, runValidators: true },
+    { returnDocument: 'after', upsert: true, runValidators: true }
   );
 
   if (!account) {
@@ -43,7 +43,7 @@ const seedAdmin = async (): Promise<void> => {
   }
 
   console.log(
-    `[seed] ready to log in — username: "${account.username}", password: "${password}", role: ${account.role}`,
+    `[seed] ready to log in — username: "${account.username}", password: "${password}", role: ${account.role}`
   );
   process.exit(0);
 };

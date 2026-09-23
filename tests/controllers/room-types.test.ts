@@ -48,7 +48,7 @@ describe('GET /room-types', () => {
       const response = await listRoomTypesAs(token);
 
       expect(response.status).toBe(200);
-    },
+    }
   );
 
   it('returns both active and inactive entries', async () => {

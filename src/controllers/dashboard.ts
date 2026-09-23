@@ -1,6 +1,6 @@
 import type { AppRouteQueryImplementation } from '@ts-rest/express';
 import type { contract } from '../contract/index.js';
-import { Event, EventStatus, SessionStatus, type EventDocument } from '../models/event.js';
+import { Event, type EventDocument, EventStatus, SessionStatus } from '../models/event.js';
 import { Role } from '../models/user.js';
 import { filterEventForRole } from '../services/event-visibility.js';
 import { sessionOverlapsRange } from '../services/session.js';
@@ -79,7 +79,7 @@ export const getDashboard: AppRouteQueryImplementation<typeof contract.getDashbo
     const upcomingSessions = event.sessions.filter((session) => isUpcomingSession(session, today));
     if (upcomingSessions.length > 0) {
       const soonestSession = upcomingSessions.reduce((soonest, session) =>
-        session.startDate.getTime() < soonest.startDate.getTime() ? session : soonest,
+        session.startDate.getTime() < soonest.startDate.getTime() ? session : soonest
       );
       upcoming.push({ event, soonestSession });
     }
