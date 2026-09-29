@@ -186,6 +186,7 @@ SRS §4.10, implemented as its own collection per STORY-008 (see the note under 
 | POST | `/auth/login` | Authenticate with username/password, issue a session token | STORY-002 |
 | POST | `/users` | Create a User Account (EventManager-only) | STORY-005 |
 | GET | `/users` | List all User Accounts (EventManager-only) | STORY-006 |
+| GET | `/event-managers` | `{id, name}` of every Event Manager account, active or not (any authenticated caller) — how clients resolve an Event's `event_manager` id to a name | STORY-037, DEV-05 |
 | PATCH | `/users/:id` | Deactivate a User Account or change its role (EventManager-only) | STORY-006 |
 | GET | `/change-log` | List Change Log Entries for one entity (`?entityType=&entityId=`), EventManager-only | STORY-009 |
 | POST | `/events` | Create an Event (family type, manager, ≥1 Client Contact) | STORY-012 |
@@ -203,12 +204,14 @@ SRS §4.10, implemented as its own collection per STORY-008 (see the note under 
 | POST | `/events/:id/sessions/:sid/items` | Add a Meal or Event Item to a Session | STORY-032 |
 | PATCH | `/events/:id/sessions/:sid/items/:itemId` | Edit an Item; `total_cost` server-recomputed | STORY-032 |
 | DELETE | `/events/:id/sessions/:sid/items/:itemId` | Remove an Item | STORY-032 |
-| GET | `/calendar` | Sessions active on any date in a given month (`?month=&year=`), overlap-rule query | STORY-034 |
+| GET | `/calendar` | Sessions active on any date in a given month (`?month=&year=`), overlap-rule query; each session's `event` summary carries a server-computed `displayName` (POC → first client contact → family type, decision D7) so tiles are labelled for every role without exposing `client_contacts` | STORY-034, DEV-05 |
 | GET | `/events/search` | Date-range + status/venue/manager/type filtered Event search, overlap-rule query | STORY-036 |
 | PATCH | `/events/:id/extras` | Set the three optional extras (Decoration/Photographer/Bhatji amounts) | STORY-040 |
 | GET | `/events/:id/quotation-summary` | Live Total Cost Summary rollup — not a stored entity | STORY-041 |
 | GET | `/events/:id/quotation.pdf` | Generate and return the client-facing Quotation PDF | STORY-043 |
 | GET | `/dashboard` | Aggregate counts + upcoming-events list, role-filtered | STORY-047 |
+
+**References stay ids.** An Event's `event_manager` is returned as the user id on every Event endpoint; clients resolve names through `GET /event-managers` (open to every role, unlike `GET /users`) and fall back to the id. Chosen in DEV-05 over adding an `eventManagerName` field, which would duplicate the name on every Event response.
 
 **Not an endpoint here:** a "get current user" route (e.g. `GET /auth/me`). STORY-003 uses a throwaway test route to verify the auth middleware, not a real production endpoint, and no story has the frontend needing to re-fetch "who am I" outside the login response itself. Flagged in §3 rather than added speculatively.
 

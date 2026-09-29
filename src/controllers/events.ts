@@ -33,6 +33,7 @@ import {
 } from '../services/accommodation.js';
 import { renderPdfFromUrl } from '../services/browser-pdf.js';
 import { logChange } from '../services/change-log.js';
+import { getEventDisplayName } from '../services/event-display-name.js';
 import { filterEventForRole } from '../services/event-visibility.js';
 import { computeTotalCost } from '../services/item.js';
 import { computeBalance } from '../services/payment.js';
@@ -1724,6 +1725,7 @@ export const getCalendar: AppRouteQueryImplementation<typeof contract.getCalenda
           eventFamilyType: event.eventFamilyType,
           status: event.status,
           eventManager: event.eventManager.toString(),
+          displayName: getEventDisplayName(event),
         },
       }))
   );

@@ -3195,9 +3195,40 @@ describe('GET /calendar', () => {
         eventFamilyType: 'Wedding',
         status: EventStatus.Tentative,
         eventManager: manager.id,
+        displayName: 'Priya Nair',
       },
     });
   });
+
+  it.each([Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'labels each tile with the D7 display name (POC first) for %s, without exposing clientContacts',
+    async (role) => {
+      const { token: managerToken } = await seedCaller();
+      const manager = await seedEventManager();
+      const created = await createEventAs(
+        managerToken,
+        validPayload(manager.id, {
+          clientContacts: [
+            { name: 'Aditi Kulkarni', contactNumber: '9876543210', role: ClientContactRole.Bride },
+            { name: 'Suresh Kulkarni', contactNumber: '9876543211', role: ClientContactRole.POC },
+          ],
+        })
+      );
+      await postSessionAs(
+        managerToken,
+        created.body.id,
+        validSessionPayload({ startDate: '2026-09-12', endDate: '2026-09-12' })
+      );
+      // seedCaller's username is per-role, so the Event Manager case reuses
+      // the caller that created the Event.
+      const token = role === Role.EventManager ? managerToken : (await seedCaller(role)).token;
+
+      const response = await getCalendarAs(token, 9, 2026);
+
+      expect(response.body[0].event.displayName).toBe('Suresh Kulkarni');
+      expect(response.body[0].event).not.toHaveProperty('clientContacts');
+    }
+  );
 
   it('returns a session spanning a month boundary from both the September and the October query', async () => {
     const { token } = await seedCaller();
