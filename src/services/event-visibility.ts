@@ -50,16 +50,19 @@ export interface VisibilityRoomLine {
   occupancy: number;
   tariff?: number;
   noOfRooms: number;
-  totalInclGst?: number;
+  totalTaxable?: number;
 }
 
 export interface VisibilityAccommodation {
   checkIn: Date | null;
   checkOut: Date | null;
-  totalDays: number | null;
+  totalNights: number | null;
   roomLines: VisibilityRoomLine[];
   totalOccupancy: number;
   totalCharges?: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  finalAmount?: number;
 }
 
 export interface VisibilityDocumentsChecklist {
@@ -133,8 +136,9 @@ export interface VisibilityEvent {
  *   `extraLineItems` (STORY-068's open-ended manual line items — the same
  *   class of figure as extras, hidden for the same reason),
  *   each Session's `venueCost`, each Item's `costPerPlate`/`totalCost`,
- *   and each Accommodation room line's `tariff`/`totalInclGst` plus the
- *   block's own `totalCharges` — the SRS only names the `payment` object
+ *   and each Accommodation room line's `tariff`/`totalTaxable` plus the
+ *   block's own `totalCharges`/`discountPercent`/`discountAmount`/
+ *   `finalAmount` — the SRS only names the `payment` object
  *   explicitly, but `extras`/`venueCost`/room tariffs are money figures
  *   in the same class, and the story's own Decisions record this as a
  *   deliberate policy call, not an SRS-mandated one.
@@ -179,8 +183,11 @@ export const filterEventForRole = (event: VisibilityEvent, role: Role): Visibili
 
 const filterAccommodation = (accommodation: VisibilityAccommodation): VisibilityAccommodation => ({
   ...accommodation,
-  roomLines: accommodation.roomLines.map((line) => ({ ...line, tariff: undefined, totalInclGst: undefined })),
+  roomLines: accommodation.roomLines.map((line) => ({ ...line, tariff: undefined, totalTaxable: undefined })),
   totalCharges: undefined,
+  discountPercent: undefined,
+  discountAmount: undefined,
+  finalAmount: undefined,
 });
 
 const filterSession = (

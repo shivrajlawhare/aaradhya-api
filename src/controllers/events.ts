@@ -24,13 +24,9 @@ import {
   SessionStatus,
 } from '../models/event.js';
 import { MenuItem, type MenuItemDocument } from '../models/menu-item.js';
+import { RoomType } from '../models/room-type.js';
 import { User } from '../models/user.js';
-import {
-  computeRoomLineTotalInclGst,
-  computeTotalCharges,
-  computeTotalDays,
-  computeTotalOccupancy,
-} from '../services/accommodation.js';
+import { computeAccommodationTotals, computeRoomLineTaxable, computeTotalNights } from '../services/accommodation.js';
 import { renderPdfFromUrl } from '../services/browser-pdf.js';
 import { logChange } from '../services/change-log.js';
 import { getEventDisplayName } from '../services/event-display-name.js';
@@ -138,36 +134,68 @@ const invalidMenuItemReferenceOnCreateEvent: Extract<CreateEventResponse, { stat
   },
 };
 
-// checkIn/checkOut/totalDays are nullable, not just absent — an Event can
+// The nights to bill by: the real count once both dates are set, else 1 —
+// a room line entered before check-in/check-out still needs a provisional
+// amount to display (STORY-068's decision) rather than reading 0 until
+// dates are chosen.
+const billedNights = (accommodation: AccommodationAttributes | undefined): number =>
+  accommodation?.checkIn && accommodation.checkOut
+    ? computeTotalNights(accommodation.checkIn, accommodation.checkOut)
+    : 1;
+
+// checkIn/checkOut/totalNights are nullable, not just absent — an Event can
 // genuinely have no accommodation entered yet (accommodation itself is
-// optional on the Event, STORY-018). totalOccupancy/totalCharges default to
-// 0 for an empty roomLines array — "no rooms" is a valid, common case
-// (STORY-019's own edge case), not an error state.
+// optional on the Event, STORY-018). The totals default to 0 for an empty
+// roomLines array — "no rooms" is a valid, common case (STORY-019's own
+// edge case), not an error state. DEV-07: line amounts are taxable (no
+// GST), and the block carries the discount and Final Amount.
 const toPublicAccommodation = (accommodation: AccommodationAttributes | undefined) => {
   const checkIn = accommodation?.checkIn ?? null;
   const checkOut = accommodation?.checkOut ?? null;
   const roomLines = accommodation?.roomLines ?? [];
-  const totalDays = checkIn && checkOut ? computeTotalDays(checkIn, checkOut) : null;
-  // A room line entered before check-in/check-out are both set still needs
-  // some total to display — falls back to 1 (STORY-068's own decision,
-  // see accommodation.ts's own computeRoomLineTotalInclGst comment) rather
-  // than always reading 0 for every line until dates are chosen.
-  const totalDaysForMath = totalDays ?? 1;
+  const discountPercent = accommodation?.discountPercent ?? 0;
+  const nights = billedNights(accommodation);
 
   return {
     checkIn,
     checkOut,
-    totalDays,
+    totalNights: checkIn && checkOut ? nights : null,
     roomLines: roomLines.map((line) => ({
       roomType: line.roomType,
       occupancy: line.occupancy,
       tariff: line.tariff,
       noOfRooms: line.noOfRooms,
-      totalInclGst: computeRoomLineTotalInclGst(line, totalDaysForMath),
+      totalTaxable: computeRoomLineTaxable(line, nights),
     })),
-    totalOccupancy: computeTotalOccupancy(roomLines),
-    totalCharges: computeTotalCharges(roomLines, totalDaysForMath),
+    discountPercent,
+    ...computeAccommodationTotals(roomLines, nights, discountPercent),
   };
+};
+
+interface RoomLineRequest {
+  roomType: string;
+  occupancy?: number;
+  tariff: number;
+  noOfRooms: number;
+}
+
+// DEV-07: each saved room line's occupancy is a snapshot of its Room Type
+// master's occupancy at save time — whatever the client sent is overwritten.
+// Names match case-insensitively (the master's own uniqueness collation);
+// an active master wins over an inactive one of the same name. A room type
+// missing from the master keeps the value sent, or 0.
+const snapshotRoomLineOccupancy = async (roomLines: RoomLineRequest[]): Promise<RoomLineAttributes[]> => {
+  const names = [...new Set(roomLines.map((line) => line.roomType))];
+  const masters = await RoomType.find({ name: { $in: names } })
+    .collation({ locale: 'en', strength: 2 })
+    .sort({ active: 1 });
+  const occupancyByName = new Map(masters.map((master) => [master.name.toLowerCase(), master.occupancy]));
+  return roomLines.map((line) => ({
+    roomType: line.roomType,
+    occupancy: occupancyByName.get(line.roomType.toLowerCase()) ?? line.occupancy ?? 0,
+    tariff: line.tariff,
+    noOfRooms: line.noOfRooms,
+  }));
 };
 
 // advancePaidDate/paymentMode are nullable, not just absent — matching
@@ -252,7 +280,7 @@ const toPublicItem = (item: ItemSubdocument) => ({
 // durationDays/isMultiDay reuse STORY-026's own computeDurationDays/
 // computeIsMultiDay — never stored, always freshly computed from whatever
 // startDate/endDate are currently on the Session, same "derived, never
-// trusted from the client" convention totalDays (accommodation) and
+// trusted from the client" convention totalNights (accommodation) and
 // balance (payment) already established. Reads `_id` (not `.id`) — a
 // Types.DocumentArray's own subdocument type only declares `_id` typed
 // (Types.ObjectId), unlike a top-level HydratedDocument which also gets a
@@ -426,7 +454,10 @@ export const createEvent: AppRouteMutationImplementation<typeof contract.createE
       eventManager: body.eventManager,
       clientContacts: body.clientContacts,
       sessions: sessionsInput,
-      accommodation: body.accommodation,
+      accommodation: body.accommodation && {
+        ...body.accommodation,
+        roomLines: await snapshotRoomLineOccupancy(body.accommodation.roomLines ?? []),
+      },
       extras: body.extras,
       extraLineItems: body.extraLineItems ?? [],
       foodGstRatePercent: body.foodGstRatePercent,
@@ -673,12 +704,18 @@ const areDatesEqual = (a: Date | undefined, b: Date | undefined): boolean =>
 // uses for the rest of the Event (a whole-array change to roomLines is one
 // entry with the full before/after array, not one entry per room line,
 // exactly mirroring how clientContacts is logged). The logged roomLines
-// value is the raw stored shape only — never totalInclGst, since that's
+// value is the raw stored shape only — never totalTaxable, since that's
 // never stored (STORY-018) and logging a transient, always-recomputed value
 // would misrepresent what's actually persisted.
+// The PATCH body after snapshotRoomLineOccupancy has resolved each line's
+// occupancy from the Room Type master.
+interface AccommodationUpdateInput extends Omit<UpdateEventAccommodationBody, 'roomLines'> {
+  roomLines?: RoomLineAttributes[];
+}
+
 const buildAccommodationUpdate = (
   existing: EventDocument,
-  body: UpdateEventAccommodationBody
+  body: AccommodationUpdateInput
 ): { update: Record<string, unknown>; changes: PendingChange[] } => {
   const currentAccommodation = existing.accommodation;
   const update: Record<string, unknown> = {};
@@ -704,6 +741,11 @@ const buildAccommodationUpdate = (
       newValue: body.roomLines,
     });
   }
+  const currentDiscount = currentAccommodation?.discountPercent ?? 0;
+  if (body.discountPercent !== undefined && body.discountPercent !== currentDiscount) {
+    update['accommodation.discountPercent'] = body.discountPercent;
+    changes.push({ field: 'discountPercent', oldValue: currentDiscount, newValue: body.discountPercent });
+  }
 
   return { update, changes };
 };
@@ -725,7 +767,8 @@ export const updateEventAccommodation: AppRouteMutationImplementation<
     return eventNotFound;
   }
 
-  const { update, changes } = buildAccommodationUpdate(existing, body);
+  const roomLines = body.roomLines ? await snapshotRoomLineOccupancy(body.roomLines) : undefined;
+  const { update, changes } = buildAccommodationUpdate(existing, { ...body, roomLines });
 
   if (changes.length === 0) {
     return { status: 200, body: toPublicAccommodation(existing.accommodation) };
@@ -1054,14 +1097,11 @@ const computeEventQuotationSummary = (event: EventDocument) =>
           limitedSeating: item.limitedSeating,
         })),
       })),
-    accommodationTotalCharges: computeTotalCharges(
+    accommodationFinalAmount: computeAccommodationTotals(
       event.accommodation?.roomLines ?? [],
-      // Same "fall back to 1 before dates are both set" reasoning
-      // toPublicAccommodation's own totalDaysForMath documents.
-      event.accommodation?.checkIn && event.accommodation.checkOut
-        ? computeTotalDays(event.accommodation.checkIn, event.accommodation.checkOut)
-        : 1
-    ),
+      billedNights(event.accommodation),
+      event.accommodation?.discountPercent ?? 0
+    ).finalAmount,
     extras: {
       decoration: event.extras.decoration,
       photographer: event.extras.photographer,

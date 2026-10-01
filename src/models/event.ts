@@ -34,6 +34,9 @@ export interface ClientContactAttributes {
 // tariff/no_of_rooms.
 export interface RoomLineAttributes {
   roomType: string;
+  // A snapshot of the Room Type master's occupancy at save time (DEV-07) —
+  // the server overwrites whatever a client sends, and a later master edit
+  // never rewrites an already-saved line.
   occupancy: number;
   tariff: number;
   noOfRooms: number;
@@ -49,6 +52,8 @@ export interface AccommodationAttributes {
   checkIn?: Date;
   checkOut?: Date;
   roomLines: RoomLineAttributes[];
+  // Whole-percent discount off Total Charges (DEV-07, D3), 0–100.
+  discountPercent: number;
 }
 
 // SRS §4.4 — the single event-level Payment Record, Event Manager
@@ -181,7 +186,7 @@ export const ITEM_TYPE_VALUES: ItemType[] = Object.values(ItemType);
 // (e.g. sessionSchema's own endDate validator) rather than introducing a
 // new pattern for just this one case. totalCost is deliberately absent —
 // derived (src/services/item.ts), never stored, same "never trust a
-// stored derived value" convention totalDays/totalInclGst/balance/
+// stored derived value" convention totalNights/totalTaxable/balance/
 // durationDays already established.
 export interface ItemAttributes {
   type: ItemType;
@@ -298,6 +303,13 @@ const accommodationSchema = new Schema<AccommodationAttributes>(
     checkIn: { type: Date },
     checkOut: { type: Date },
     roomLines: { type: [roomLineSchema], default: [] },
+    discountPercent: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+      validate: { validator: Number.isInteger, message: 'discountPercent must be a whole number.' },
+    },
   },
   { _id: false }
 );

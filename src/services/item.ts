@@ -14,7 +14,7 @@ export interface MealItemCostInput {
  * unit-testable with no HTTP layer (this story's own requirement). Never
  * wired into src/models/event.ts: total_cost is never stored, only
  * computed on demand, same "derived, never trusted from the client"
- * convention totalDays/totalInclGst/balance/durationDays already
+ * convention totalNights/totalTaxable/balance/durationDays already
  * established.
  */
 
@@ -22,7 +22,7 @@ export interface MealItemCostInput {
 // rounded to the nearest currency unit — this story's own edge case: a
 // decimal cost_per_plate (e.g. 33.33 × 3) must not accumulate a
 // floating-point error in the result, the same "round after multiplying"
-// fix computeRoomLineTotalInclGst already applies for its own GST
+// fix computeRoomLineTaxable already applies for its own tariff
 // multiplication. A pax of 0 is a valid placeholder row (this story's own
 // edge case, decided as "allowed") and simply computes to 0, not an error
 // (limited_seating overrides this the same way it overrides any other pax).

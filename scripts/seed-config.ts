@@ -11,6 +11,7 @@
  * default cost reset rather than failing on the uniqueness constraint.
  */
 import { connectToDatabase } from '../src/db.js';
+import { renameDormitoryToFamilyRoom } from '../src/migrations/rename-dormitory-room-type.js';
 import { RoomType } from '../src/models/room-type.js';
 import { Venue } from '../src/models/venue.js';
 
@@ -26,13 +27,25 @@ const VENUES = [
   { name: 'Lawn', defaultVenueCost: 50000 },
 ];
 
-// Tariffs from example_quatation_1.pdf, as named in this story's own AC.
+// DEV-07 (D2, example_quatation_3.pdf): names, occupancy (guests per room)
+// and tariffs. "Deluxe" is now "Delux" and "Dormitory" is "Family Room".
 const ROOM_TYPES = [
-  { name: 'Deluxe', defaultTariff: 2500 },
-  { name: 'Executive', defaultTariff: 3500 },
-  { name: 'Dormitory', defaultTariff: 5000 },
-  { name: 'Extra Beds', defaultTariff: 700 },
+  { name: 'Delux', occupancy: 2, defaultTariff: 2800 },
+  { name: 'Executive', occupancy: 3, defaultTariff: 3800 },
+  { name: 'Family Room', occupancy: 6, defaultTariff: 6000 },
+  { name: 'Extra Beds', occupancy: 0, defaultTariff: 700 },
 ];
+
+// Earlier seeds' names, renamed in place so a re-seed doesn't leave the old
+// name active beside the new one. Dormitory → Family Room also renames
+// Event room lines (the DEV-07 migration); Deluxe → Delux is the master only.
+const renameLegacyRoomTypes = async (): Promise<void> => {
+  await renameDormitoryToFamilyRoom();
+  const hasDelux = (await RoomType.exists({ name: 'Delux', active: true })) !== null;
+  if (!hasDelux) {
+    await RoomType.updateOne({ name: 'Deluxe', active: true }, { name: 'Delux' });
+  }
+};
 
 const seedConfig = async (): Promise<void> => {
   await connectToDatabase();
@@ -45,6 +58,7 @@ const seedConfig = async (): Promise<void> => {
     );
   }
 
+  await renameLegacyRoomTypes();
   for (const roomType of ROOM_TYPES) {
     await RoomType.findOneAndUpdate(
       { name: roomType.name, active: true },

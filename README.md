@@ -32,6 +32,22 @@ credential (see `docs/api-conventions.md`).
 | `npm start` | Run the compiled server |
 | `npm run typecheck` | `tsc -p tsconfig.json` (covers `src/` and `tests/`) |
 | `npm test` | Vitest — `tests/**/*.test.ts` |
+| `npm run seed:config` | Seed the Venue and Room Type master lists (safe to re-run) |
+| `npm run migrate:dev07` | One-off DEV-07 migration: Dormitory → Family Room (see below) |
+
+## Migrations
+
+One-off data migrations live in `src/migrations/` (the logic, tested under
+`tests/migrations/`), each with a thin runner in `scripts/`. Every migration is
+idempotent.
+
+| Migration | Run | What it does |
+|---|---|---|
+| DEV-07 `rename-dormitory-room-type.ts` | `npm run migrate:dev07` (also run by `seed:config`) | Renames the "Dormitory" Room Type to "Family Room" (occupancy 6 if it had none yet) and every Event room line whose `roomType` is "Dormitory". If an active "Family Room" already exists, an active "Dormitory" is deactivated instead. |
+
+Other DEV-07 data changes need no backfill: Room Types gained `occupancy`
+(older records read 0 until Settings or `seed:config` sets it), and
+`accommodation.discountPercent` defaults to 0 on existing Events.
 
 ## Layout
 

@@ -60,6 +60,21 @@ describe('GET /room-types', () => {
 
     expect(response.body).toHaveLength(2);
   });
+
+  it('includes each entry’s occupancy, reading 0 for one saved before occupancy existed', async () => {
+    const token = await seedCaller();
+    await RoomType.create({ name: 'Delux', occupancy: 2, defaultTariff: 2800 });
+    await RoomType.collection.insertOne({ name: 'Legacy', defaultTariff: 1000, active: true });
+
+    const response = await listRoomTypesAs(token);
+
+    expect(response.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'Delux', occupancy: 2 }),
+        expect.objectContaining({ name: 'Legacy', occupancy: 0 }),
+      ])
+    );
+  });
 });
 
 describe('POST /room-types', () => {
@@ -72,7 +87,7 @@ describe('POST /room-types', () => {
   it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
     const token = await seedCaller(role);
 
-    const response = await createRoomTypeAs(token, { name: 'Deluxe', defaultTariff: 2500 });
+    const response = await createRoomTypeAs(token, { name: 'Deluxe', occupancy: 2, defaultTariff: 2500 });
 
     expect(response.status).toBe(403);
   });
@@ -80,17 +95,40 @@ describe('POST /room-types', () => {
   it('creates the Room Type and returns it', async () => {
     const token = await seedCaller();
 
-    const response = await createRoomTypeAs(token, { name: 'Deluxe', defaultTariff: 2500 });
+    const response = await createRoomTypeAs(token, { name: 'Deluxe', occupancy: 2, defaultTariff: 2500 });
 
     expect(response.status).toBe(201);
-    expect(response.body).toMatchObject({ name: 'Deluxe', defaultTariff: 2500, active: true });
+    expect(response.body).toMatchObject({ name: 'Deluxe', occupancy: 2, defaultTariff: 2500, active: true });
     expect(typeof response.body.id).toBe('string');
+  });
+
+  // DEV-07: occupancy (guests per room) is required, a whole number >= 0.
+  it.each([
+    ['missing', { name: 'Delux', defaultTariff: 2800 }],
+    ['negative', { name: 'Delux', occupancy: -1, defaultTariff: 2800 }],
+    ['fractional', { name: 'Delux', occupancy: 1.5, defaultTariff: 2800 }],
+  ])('returns 400 when occupancy is %s', async (_label, body) => {
+    const token = await seedCaller();
+
+    const response = await createRoomTypeAs(token, body);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('accepts occupancy 0 (Extra Beds)', async () => {
+    const token = await seedCaller();
+
+    const response = await createRoomTypeAs(token, { name: 'Extra Beds', occupancy: 0, defaultTariff: 700 });
+
+    expect(response.status).toBe(201);
+    expect(response.body.occupancy).toBe(0);
   });
 
   it('returns 400 when defaultTariff is missing', async () => {
     const token = await seedCaller();
 
-    const response = await createRoomTypeAs(token, { name: 'Deluxe' });
+    const response = await createRoomTypeAs(token, { name: 'Deluxe', occupancy: 2 });
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
@@ -99,7 +137,7 @@ describe('POST /room-types', () => {
   it('returns 400 for a negative defaultTariff', async () => {
     const token = await seedCaller();
 
-    const response = await createRoomTypeAs(token, { name: 'Deluxe', defaultTariff: -1 });
+    const response = await createRoomTypeAs(token, { name: 'Deluxe', occupancy: 2, defaultTariff: -1 });
 
     expect(response.status).toBe(400);
   });
@@ -108,7 +146,7 @@ describe('POST /room-types', () => {
     const token = await seedCaller();
     await RoomType.create({ name: 'Deluxe', defaultTariff: 2500 });
 
-    const response = await createRoomTypeAs(token, { name: 'Deluxe', defaultTariff: 2500 });
+    const response = await createRoomTypeAs(token, { name: 'Deluxe', occupancy: 2, defaultTariff: 2500 });
 
     expect(response.status).toBe(409);
     expect(response.body).toEqual({
@@ -120,7 +158,7 @@ describe('POST /room-types', () => {
     const token = await seedCaller();
     await RoomType.create({ name: 'Deluxe', defaultTariff: 2500 });
 
-    const response = await createRoomTypeAs(token, { name: 'deluxe', defaultTariff: 2500 });
+    const response = await createRoomTypeAs(token, { name: 'deluxe', occupancy: 2, defaultTariff: 2500 });
 
     expect(response.status).toBe(409);
   });
@@ -129,7 +167,7 @@ describe('POST /room-types', () => {
     const token = await seedCaller();
     await RoomType.create({ name: 'Deluxe', defaultTariff: 2500, active: false });
 
-    const response = await createRoomTypeAs(token, { name: 'Deluxe', defaultTariff: 2800 });
+    const response = await createRoomTypeAs(token, { name: 'Deluxe', occupancy: 2, defaultTariff: 2800 });
 
     expect(response.status).toBe(201);
   });
@@ -138,7 +176,7 @@ describe('POST /room-types', () => {
 describe('PATCH /room-types/:id', () => {
   it('returns 401 with no token', async () => {
     const token = await seedCaller();
-    const created = await createRoomTypeAs(token, { name: 'Deluxe', defaultTariff: 2500 });
+    const created = await createRoomTypeAs(token, { name: 'Deluxe', occupancy: 2, defaultTariff: 2500 });
 
     const response = await request(app).patch(`/room-types/${created.body.id}`).send({ active: false });
 
@@ -176,7 +214,7 @@ describe('PATCH /room-types/:id', () => {
 
   it('deactivates the Room Type without deleting it', async () => {
     const token = await seedCaller();
-    const created = await createRoomTypeAs(token, { name: 'Deluxe', defaultTariff: 2500 });
+    const created = await createRoomTypeAs(token, { name: 'Deluxe', occupancy: 2, defaultTariff: 2500 });
 
     const response = await patchRoomTypeAs(token, created.body.id, { active: false });
 
@@ -188,7 +226,7 @@ describe('PATCH /room-types/:id', () => {
 
   it('edits name and defaultTariff independently of active', async () => {
     const token = await seedCaller();
-    const created = await createRoomTypeAs(token, { name: 'Deluxe', defaultTariff: 2500 });
+    const created = await createRoomTypeAs(token, { name: 'Deluxe', occupancy: 2, defaultTariff: 2500 });
 
     const response = await patchRoomTypeAs(token, created.body.id, { name: 'Deluxe Suite', defaultTariff: 2800 });
 
@@ -196,10 +234,20 @@ describe('PATCH /room-types/:id', () => {
     expect(response.body).toMatchObject({ name: 'Deluxe Suite', defaultTariff: 2800, active: true });
   });
 
+  it('edits occupancy on its own (DEV-07)', async () => {
+    const token = await seedCaller();
+    const created = await createRoomTypeAs(token, { name: 'Family Room', occupancy: 4, defaultTariff: 6000 });
+
+    const response = await patchRoomTypeAs(token, created.body.id, { occupancy: 6 });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ name: 'Family Room', occupancy: 6, defaultTariff: 6000 });
+  });
+
   it('returns 409 when renaming to a name already active on another Room Type', async () => {
     const token = await seedCaller();
-    await createRoomTypeAs(token, { name: 'Deluxe', defaultTariff: 2500 });
-    const dormitory = await createRoomTypeAs(token, { name: 'Dormitory', defaultTariff: 5000 });
+    await createRoomTypeAs(token, { name: 'Deluxe', occupancy: 2, defaultTariff: 2500 });
+    const dormitory = await createRoomTypeAs(token, { name: 'Dormitory', occupancy: 2, defaultTariff: 5000 });
 
     const response = await patchRoomTypeAs(token, dormitory.body.id, { name: 'Deluxe' });
 

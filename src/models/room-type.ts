@@ -4,6 +4,9 @@ import { type HydratedDocument, model, Schema } from 'mongoose';
 // dropdown on a Session's Room Line entry.
 export interface RoomTypeAttributes {
   name: string;
+  // Guests per room (DEV-07, D2): the master value every Event room line
+  // snapshots at save time — e.g. Delux 2, Family Room 6, Extra Beds 0.
+  occupancy: number;
   defaultTariff: number;
   active: boolean;
   createdAt: Date;
@@ -13,6 +16,9 @@ export interface RoomTypeAttributes {
 const roomTypeSchema = new Schema<RoomTypeAttributes>(
   {
     name: { type: String, required: true, trim: true },
+    // default 0 so a Room Type saved before DEV-07 still reads as a number
+    // until the DEV-07 migration / Settings fills it in.
+    occupancy: { type: Number, required: true, min: 0, default: 0 },
     defaultTariff: { type: Number, required: true, min: 0 },
     active: { type: Boolean, default: true },
   },

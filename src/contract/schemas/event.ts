@@ -62,7 +62,10 @@ export const clientContactResultSchema = z.object({
 
 const roomLineInputSchema = z.object({
   roomType: z.string().trim().min(1),
-  occupancy: z.number().min(0),
+  // Optional and advisory (DEV-07): the server overwrites it with the Room
+  // Type master's occupancy at save time; only a room type missing from the
+  // master keeps the value sent (or 0).
+  occupancy: z.number().min(0).optional(),
   tariff: z.number().min(0),
   // A no_of_rooms of 0 is a valid placeholder row — STORY-018's own
   // decision, matching the Mongoose schema's `min: 0` (not `min: 1`).
@@ -76,15 +79,18 @@ export const updateAccommodationBodySchema = z.object({
   checkIn: z.coerce.date().optional(),
   checkOut: z.coerce.date().optional(),
   roomLines: z.array(roomLineInputSchema).optional(),
+  // Whole-percent discount off Total Charges (DEV-07, D3).
+  discountPercent: z.number().int().min(0).max(100).optional(),
 });
 
 const roomLineResultSchema = roomLineInputSchema.extend({
-  // Derived (STORY-018's computeRoomLineTotalInclGst) — never accepted as
-  // input, always present on output.
-  totalInclGst: z.number(),
+  occupancy: z.number(),
+  // Derived (services/accommodation.ts computeRoomLineTaxable: tariff ×
+  // rooms × nights, no GST) — never accepted as input, always on output.
+  totalTaxable: z.number(),
 });
 
-// The public Accommodation Block shape — checkIn/checkOut/totalDays are
+// The public Accommodation Block shape — checkIn/checkOut/totalNights are
 // nullable, not just optional, since a caller can genuinely have no
 // accommodation entered yet (STORY-018: accommodation itself is optional on
 // the Event). roomLines/totalOccupancy/totalCharges default to an empty/zero
@@ -92,10 +98,16 @@ const roomLineResultSchema = roomLineInputSchema.extend({
 export const accommodationResultSchema = z.object({
   checkIn: z.date().nullable(),
   checkOut: z.date().nullable(),
-  totalDays: z.number().nullable(),
+  // Nights stayed; null until both dates are set (renamed from totalDays in
+  // DEV-07 — same value).
+  totalNights: z.number().nullable(),
   roomLines: z.array(roomLineResultSchema),
   totalOccupancy: z.number(),
+  // Σ line taxable amounts → minus the discount → Final Amount (pre-GST).
   totalCharges: z.number(),
+  discountPercent: z.number(),
+  discountAmount: z.number(),
+  finalAmount: z.number(),
 });
 
 // Every field optional (PATCH semantics). No cross-field validation between
@@ -172,6 +184,9 @@ export const quotationSummaryResultSchema = z.object({
   venueTotal: z.number(),
   foodSubtotal: z.number(),
   foodTotalInclGst: z.number(),
+  // DEV-07: the Final Amount (after discount), its 5% GST, and their sum.
+  accommodationTaxable: z.number(),
+  accommodationGst: z.number(),
   accommodationTotal: z.number(),
   extrasTotal: z.number(),
   grandTotal: z.number(),
@@ -411,7 +426,7 @@ export const itemResultSchema = z.object({
 // durationDays/isMultiDay are derived (STORY-026's computeDurationDays/
 // computeIsMultiDay) — never accepted as input, always present on output,
 // same "derived fields ride along with every sub-resource response"
-// convention totalDays/totalInclGst (accommodation) and balance (payment)
+// convention totalNights/totalTaxable (accommodation) and balance (payment)
 // already established. startTime/endTime are nullable, not just optional,
 // matching accommodation's checkIn/checkOut convention for "genuinely
 // unset yet". items added STORY-033 — GET /events/:id returned it only
@@ -489,7 +504,7 @@ export const eventResultSchema = z.object({
 // createdAt/updatedAt).
 const filteredRoomLineResultSchema = roomLineResultSchema.extend({
   tariff: z.number().optional(),
-  totalInclGst: z.number().optional(),
+  totalTaxable: z.number().optional(),
 });
 
 // Exported — STORY-050/051's dashboard row reuses this directly for
@@ -498,6 +513,9 @@ const filteredRoomLineResultSchema = roomLineResultSchema.extend({
 export const filteredAccommodationResultSchema = accommodationResultSchema.extend({
   roomLines: z.array(filteredRoomLineResultSchema),
   totalCharges: z.number().optional(),
+  discountPercent: z.number().optional(),
+  discountAmount: z.number().optional(),
+  finalAmount: z.number().optional(),
 });
 
 const filteredItemResultSchema = itemResultSchema.extend({

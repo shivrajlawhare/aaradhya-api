@@ -13,8 +13,8 @@ const fixtureEvent: VisibilityEvent = {
   accommodation: {
     checkIn: new Date('2026-06-14T00:00:00.000Z'),
     checkOut: new Date('2026-06-16T00:00:00.000Z'),
-    totalDays: 3,
-    roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1, totalInclGst: 5900 }],
+    totalNights: 3,
+    roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1, totalTaxable: 5900 }],
     totalOccupancy: 2,
     totalCharges: 5900,
   },
@@ -170,7 +170,7 @@ describe('filterEventForRole', () => {
       expect(result.sessions[0]!.venueCost).toBeUndefined();
       expect(result.accommodation!.totalCharges).toBeUndefined();
       expect(result.accommodation!.roomLines[0]!.tariff).toBeUndefined();
-      expect(result.accommodation!.roomLines[0]!.totalInclGst).toBeUndefined();
+      expect(result.accommodation!.roomLines[0]!.totalTaxable).toBeUndefined();
       const raw = JSON.parse(JSON.stringify(result));
       expect(raw).not.toHaveProperty('payment');
       expect(raw).not.toHaveProperty('extras');

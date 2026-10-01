@@ -46,10 +46,15 @@ The aggregate root — SRS §4.1. One document per Event; Client Contacts, Accom
 |---|---|---|---|
 | `check_in` | Date | Yes (if accommodation exists at all) | SRS §4.3. |
 | `check_out` | Date | Yes | SRS §4.3. |
-| `total_days` | Number | Yes — **server-computed on every write, never client-editable** | SRS §4.3 "auto-calc"; STORY-018. |
+| `total_nights` | Number | Derived on read, never stored or client-editable | Nights stayed, `floor(check_out − check_in)`, minimum 1; `null` until both dates are set. Was `total_days` before DEV-07 (same value, renamed). SRS §4.3; STORY-018/070. |
 | `room_lines` | [RoomLine] (§1.1.3) | Yes, may be empty array | SRS §4.3. |
-| `total_occupancy` | Number | Yes — server-computed | SRS §4.3 "auto-sum"; STORY-018. |
-| `total_charges` | Number | Yes — server-computed | SRS §4.3 "auto-sum"; STORY-018. |
+| `discount_percent` | Number (whole, 0–100) | Yes, default 0 | DEV-07 (decision D3): percentage off Total Charges. Money — stripped for roles without money visibility. |
+| `total_occupancy` | Number | Derived | Σ occupancy × no_of_rooms. SRS §4.3 "auto-sum"; STORY-018. |
+| `total_charges` | Number | Derived | Σ each line's `total_taxable` (no GST). DEV-07. |
+| `discount_amount` | Number | Derived | `round(total_charges × discount_percent / 100)`. DEV-07. |
+| `final_amount` | Number | Derived | `total_charges − discount_amount` — the taxable amount the Total Cost Summary adds 5% GST to. DEV-07. |
+
+**DEV-07 (decision D2, `example_quatation_3.pdf`):** room lines are no longer GST-inclusive. Example: 78400 + 15200 + 24000 + 0 = 1,17,600 → 10% = 11,760 → Final Amount 1,05,840 → the summary adds GST 5,292 → ₹ 1,11,132. The only consumer (aaradhya-web) was migrated in the same change, so the renamed fields have no read aliases.
 
 #### 1.1.3 Room Line — embedded in `events.accommodation.room_lines[]`
 
@@ -57,10 +62,10 @@ The aggregate root — SRS §4.1. One document per Event; Client Contacts, Accom
 |---|---|---|---|
 | `_id` | ObjectId | Yes | Addresses a specific room line for edit/remove. |
 | `room_type` | String (prefilled list + custom) | Yes | SRS §4.3. |
-| `occupancy` | Number | Yes | SRS §4.3. |
+| `occupancy` | Number | Yes | Guests per room — a **snapshot of the Room Type master's `occupancy` at save time** (DEV-07). Any client value is overwritten; only a room type missing from the master keeps the value sent (or 0). A later master edit doesn't rewrite saved lines. |
 | `tariff` | Number | Yes (prefilled, editable) | SRS §4.3. |
 | `no_of_rooms` | Number | Yes | SRS §4.3. |
-| `total_incl_gst` | Number | Yes — server-computed | SRS §4.3 "auto-calc"; STORY-018. |
+| `total_taxable` | Number | Derived | `tariff × no_of_rooms × total_nights`, no GST ("Total Taxable Amount"). Was `total_incl_gst` (× 1.05) before DEV-07. |
 
 #### 1.1.4 Payment Record — embedded in `events.payment`
 
@@ -162,6 +167,18 @@ SRS §4.6. Organization-wide, shared across every Event/Session/Item.
 | `default_cost_per_plate` | Number | Yes | SRS §4.6 — used to auto-suggest `cost_per_plate` on a Meal Item. |
 | `created_via` | String (e.g. `adhoc`\|`preseeded`) | Yes | SRS §4.6 — "whether added ad hoc during Item entry... or pre-seeded." |
 
+### 1.3a `room_types`
+
+The Room Type master list (SRS §4.6/§5.8; Settings → Room Types).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `_id` | ObjectId | Yes | Mongo primary key. |
+| `name` | String | Yes, unique among active entries (case-insensitive) | Seeded as Delux, Executive, Family Room, Extra Beds (DEV-07; "Dormitory" was renamed by `npm run migrate:dev07`). |
+| `occupancy` | Number (whole, ≥ 0) | Yes (records saved before DEV-07 read 0) | Guests per room: Delux 2, Executive 3, Family Room 6, Extra Beds 0. Snapshotted onto Event room lines at save time. DEV-07. |
+| `default_tariff` | Number | Yes | Prefills a room line's tariff (Delux 2800, Executive 3800, Family Room 6000, Extra Beds 700). |
+| `active` | Boolean | Yes, default true | Inactive entries stay for historical Events. |
+
 ### 1.4 `change_log_entries`
 
 SRS §4.10, implemented as its own collection per STORY-008 (see the note under §1.1).
@@ -207,7 +224,7 @@ SRS §4.10, implemented as its own collection per STORY-008 (see the note under 
 | GET | `/calendar` | Sessions active on any date in a given month (`?month=&year=`), overlap-rule query; each session's `event` summary carries a server-computed `displayName` (POC → first client contact → family type, decision D7) so tiles are labelled for every role without exposing `client_contacts` | STORY-034, DEV-05 |
 | GET | `/events/search` | Date-range + status/venue/manager/type filtered Event search, overlap-rule query | STORY-036 |
 | PATCH | `/events/:id/extras` | Set the three optional extras (Decoration/Photographer/Bhatji amounts) | STORY-040 |
-| GET | `/events/:id/quotation-summary` | Live Total Cost Summary rollup — not a stored entity | STORY-041 |
+| GET | `/events/:id/quotation-summary` | Live Total Cost Summary rollup — not a stored entity. Accommodation is reported as `accommodationTaxable` (the Final Amount), `accommodationGst` (5%) and `accommodationTotal` (their sum) | STORY-041, DEV-07 |
 | GET | `/events/:id/quotation.pdf` | Generate and return the client-facing Quotation PDF | STORY-043 |
 | GET | `/dashboard` | Aggregate counts + upcoming-events list, role-filtered | STORY-047 |
 

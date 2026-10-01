@@ -10,6 +10,7 @@ type UpdateRoomTypeResponse = ServerInferResponses<typeof contract.updateRoomTyp
 const toPublicRoomType = (roomType: RoomTypeDocument) => ({
   id: roomType.id,
   name: roomType.name,
+  occupancy: roomType.occupancy,
   defaultTariff: roomType.defaultTariff,
   active: roomType.active,
   createdAt: roomType.createdAt,
@@ -33,7 +34,11 @@ const nameAlreadyExists: Extract<CreateRoomTypeResponse, { status: 409 }> = {
 
 export const createRoomType: AppRouteMutationImplementation<typeof contract.createRoomType> = async ({ body }) => {
   try {
-    const roomType = await RoomType.create({ name: body.name, defaultTariff: body.defaultTariff });
+    const roomType = await RoomType.create({
+      name: body.name,
+      occupancy: body.occupancy,
+      defaultTariff: body.defaultTariff,
+    });
     return { status: 201, body: toPublicRoomType(roomType) };
   } catch (error) {
     if (isDuplicateKeyError(error)) {
@@ -52,9 +57,14 @@ export const updateRoomType: AppRouteMutationImplementation<typeof contract.upda
   params,
   body,
 }) => {
-  const update: { name?: string; defaultTariff?: number; active?: boolean } = {};
+  const update: { name?: string; occupancy?: number; defaultTariff?: number; active?: boolean } = {};
   if (body.name !== undefined) {
     update.name = body.name;
+  }
+  // A master edit doesn't rewrite Event room lines already saved — each
+  // line keeps the occupancy snapshotted when it was saved (DEV-07).
+  if (body.occupancy !== undefined) {
+    update.occupancy = body.occupancy;
   }
   if (body.defaultTariff !== undefined) {
     update.defaultTariff = body.defaultTariff;

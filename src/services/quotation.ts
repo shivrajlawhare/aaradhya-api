@@ -1,5 +1,6 @@
 import { ItemType } from '../models/event.js';
 import { roundToCurrency } from '../utils/currency.js';
+import { computeAccommodationGst } from './accommodation.js';
 import { computeTotalCost } from './item.js';
 
 // STORY-068 — verified against both reference quotations (docs/
@@ -42,10 +43,10 @@ export interface QuotationExtrasInput {
 
 export interface TotalCostSummaryInput {
   sessions: QuotationSessionInput[];
-  // Accommodation's own total_charges (src/services/accommodation.ts'
-  // computeTotalCharges) — already GST-inclusive at Accommodation's own
-  // rate, so it is added to the grand total as-is, never re-taxed here.
-  accommodationTotalCharges?: number;
+  // Accommodation's Final Amount (services/accommodation.ts: Total Charges
+  // less the discount) — taxable, pre-GST. DEV-07 (D2): 5% GST is added here,
+  // once, on the whole amount.
+  accommodationFinalAmount?: number;
   extras?: QuotationExtrasInput;
   gstRatePercent?: number;
 }
@@ -54,6 +55,8 @@ export interface TotalCostSummary {
   venueTotal: number;
   foodSubtotal: number;
   foodTotalInclGst: number;
+  accommodationTaxable: number;
+  accommodationGst: number;
   accommodationTotal: number;
   extrasTotal: number;
   grandTotal: number;
@@ -99,22 +102,33 @@ const sumFoodSubtotal = (sessions: QuotationSessionInput[]): number =>
 
 export const computeTotalCostSummary = ({
   sessions,
-  accommodationTotalCharges = 0,
+  accommodationFinalAmount = 0,
   extras = {},
   gstRatePercent = FOOD_GST_RATE_PERCENT,
 }: TotalCostSummaryInput): TotalCostSummary => {
   const venueTotal = sumVenueCosts(sessions);
   const foodSubtotal = sumFoodSubtotal(sessions);
-  // GST applies only to the food subtotal (SRS Assumption A9) — venue
-  // costs, Accommodation's already-GST-inclusive total, and extras are all
-  // untouched by this rate.
+  // This rate applies only to the food subtotal (SRS Assumption A9) — venue
+  // costs and extras are untaxed; Accommodation has its own 5% below.
   const foodTotalInclGst = roundToCurrency(foodSubtotal * (1 + gstRatePercent / 100));
-  const accommodationTotal = roundToCurrency(accommodationTotalCharges);
+  // example_quatation_3.pdf: 105840 + 5292 = 111132.
+  const accommodationTaxable = roundToCurrency(accommodationFinalAmount);
+  const accommodationGst = computeAccommodationGst(accommodationTaxable);
+  const accommodationTotal = roundToCurrency(accommodationTaxable + accommodationGst);
   const extraLineItemsTotal = (extras.extraLineItems ?? []).reduce((total, item) => total + item.amount, 0);
   const extrasTotal = roundToCurrency(
     (extras.decoration ?? 0) + (extras.photographer ?? 0) + (extras.bhatji ?? 0) + extraLineItemsTotal
   );
   const grandTotal = roundToCurrency(venueTotal + foodTotalInclGst + accommodationTotal + extrasTotal);
 
-  return { venueTotal, foodSubtotal, foodTotalInclGst, accommodationTotal, extrasTotal, grandTotal };
+  return {
+    venueTotal,
+    foodSubtotal,
+    foodTotalInclGst,
+    accommodationTaxable,
+    accommodationGst,
+    accommodationTotal,
+    extrasTotal,
+    grandTotal,
+  };
 };

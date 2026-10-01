@@ -4,6 +4,7 @@ import { createApp } from '../../src/app.js';
 import { config } from '../../src/config.js';
 import { ChangeLogEntry } from '../../src/models/change-log-entry.js';
 import { ClientContactRole, Event, EventStatus } from '../../src/models/event.js';
+import { RoomType } from '../../src/models/room-type.js';
 import { Role, User } from '../../src/models/user.js';
 import { renderPdfFromUrl } from '../../src/services/browser-pdf.js';
 import { signSessionToken } from '../../src/services/token.js';
@@ -369,7 +370,7 @@ describe('POST /events', () => {
       ])
     );
     expect(response.body.accommodation.roomLines).toHaveLength(1);
-    expect(response.body.accommodation.totalDays).toBe(2);
+    expect(response.body.accommodation.totalNights).toBe(2);
 
     const stored = await Event.findById(response.body.id);
     expect(stored?.sessions).toHaveLength(1);
@@ -740,10 +741,13 @@ describe('GET /events/:id', () => {
     expect(response.body.accommodation).toEqual({
       checkIn: null,
       checkOut: null,
-      totalDays: null,
+      totalNights: null,
       roomLines: [],
       totalOccupancy: 0,
       totalCharges: 0,
+      discountPercent: 0,
+      discountAmount: 0,
+      finalAmount: 0,
     });
   });
 
@@ -757,12 +761,12 @@ describe('GET /events/:id', () => {
 
     const response = await getEventAs(token, created.body.id);
 
-    // No check_in/check_out set — total_days falls back to 1 (STORY-068's
-    // own decision). 5000 × 1 room × 1 day × 1.05 = 5250.
+    // No check_in/check_out set — nights fall back to 1 (STORY-068's own
+    // decision). 5000 × 1 room × 1 night = 5000 taxable, no GST (DEV-07).
     expect(response.body.accommodation.roomLines).toEqual([
-      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1, totalInclGst: 5250 },
+      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1, totalTaxable: 5000 },
     ]);
-    expect(response.body.accommodation.totalCharges).toBe(5250);
+    expect(response.body.accommodation.totalCharges).toBe(5000);
   });
 
   it('includes payment, defaulting to 0/null for a freshly created Event', async () => {
@@ -972,9 +976,9 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
     expect(response.body.clientContacts).toHaveLength(1);
     expect(response.body.payment.totalEstimatedAmount).toBe(50000);
     expect(response.body.extras.decoration).toBe(1000);
-    // No check_in/check_out set — total_days falls back to 1. 5000 × 1
-    // room × 1 day × 1.05 = 5250.
-    expect(response.body.accommodation.totalCharges).toBe(5250);
+    // No check_in/check_out set — nights fall back to 1. 5000 × 1 room ×
+    // 1 night = 5000 (no GST on the line, DEV-07).
+    expect(response.body.accommodation.totalCharges).toBe(5000);
     expect(response.body.sessions[0].venueCost).toBeDefined();
     expect(response.body.sessions[0].setup).toBeDefined();
     expect(response.body.sessions[0].items).toHaveLength(2);
@@ -1024,7 +1028,10 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
     expect(response.body.sessions[0]).not.toHaveProperty('venueCost');
     expect(response.body.accommodation).not.toHaveProperty('totalCharges');
     expect(response.body.accommodation.roomLines[0]).not.toHaveProperty('tariff');
-    expect(response.body.accommodation.roomLines[0]).not.toHaveProperty('totalInclGst');
+    expect(response.body.accommodation.roomLines[0]).not.toHaveProperty('totalTaxable');
+    expect(response.body.accommodation).not.toHaveProperty('discountPercent');
+    expect(response.body.accommodation).not.toHaveProperty('discountAmount');
+    expect(response.body.accommodation).not.toHaveProperty('finalAmount');
   });
 
   it('Reception omits payment/menu fields, includes client names/rooms/check-in-out — genuinely absent from the raw JSON', async () => {
@@ -1422,13 +1429,15 @@ describe('PATCH /events/:id/accommodation', () => {
     // check_in/check_out are 1 calendar day apart — 1 night stayed
     // (STORY-070's own fix; not the "+1" inclusive-day count Session's own
     // duration uses).
-    expect(response.body.totalDays).toBe(1);
+    expect(response.body.totalNights).toBe(1);
     expect(response.body.totalOccupancy).toBe(8); // (2*2) + (4*1)
-    // Double: 5000*2 rooms*1 day*1.05=10500; Suite: 12000*1 room*1 day*1.05=12600; sum=23100.
-    expect(response.body.totalCharges).toBe(23100);
+    // Taxable, no GST (DEV-07): Double 5000*2*1=10000; Suite 12000*1*1=12000.
+    expect(response.body.totalCharges).toBe(22000);
+    expect(response.body.discountAmount).toBe(0);
+    expect(response.body.finalAmount).toBe(22000);
     expect(response.body.roomLines).toEqual([
-      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2, totalInclGst: 10500 },
-      { roomType: 'Suite', occupancy: 4, tariff: 12000, noOfRooms: 1, totalInclGst: 12600 },
+      { roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2, totalTaxable: 10000 },
+      { roomType: 'Suite', occupancy: 4, tariff: 12000, noOfRooms: 1, totalTaxable: 12000 },
     ]);
   });
 
@@ -1454,12 +1463,14 @@ describe('PATCH /events/:id/accommodation', () => {
       roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }],
       totalCharges: 999999,
       totalOccupancy: 999999,
-      totalDays: 999999,
+      totalNights: 999999,
+      finalAmount: 999999,
     });
 
     expect(response.status).toBe(200);
-    // No check_in/check_out set — total_days falls back to 1.
-    expect(response.body.totalCharges).toBe(5250); // 5000*1*1*1.05, not 999999
+    // No check_in/check_out set — nights fall back to 1.
+    expect(response.body.totalCharges).toBe(5000); // 5000*1*1, not 999999
+    expect(response.body.finalAmount).toBe(5000);
     expect(response.body.totalOccupancy).toBe(2);
   });
 
@@ -1477,7 +1488,7 @@ describe('PATCH /events/:id/accommodation', () => {
 
     expect(response.status).toBe(200);
     // No check_in/check_out set — total_days falls back to 1.
-    expect(response.body.totalCharges).toBe(15750); // 5000*3*1*1.05, not the earlier 5250
+    expect(response.body.totalCharges).toBe(15000); // 5000*3*1, not the earlier 5000
   });
 
   it('leaves check_in/check_out untouched when only room_lines is submitted', async () => {
@@ -2088,6 +2099,8 @@ describe('GET /events/:id/quotation-summary', () => {
       venueTotal: 0,
       foodSubtotal: 0,
       foodTotalInclGst: 0,
+      accommodationTaxable: 0,
+      accommodationGst: 0,
       accommodationTotal: 0,
       extrasTotal: 0,
       grandTotal: 0,
@@ -2112,7 +2125,8 @@ describe('GET /events/:id/quotation-summary', () => {
     await postItemAs(token, eventId, session2.body.id, validMealItemPayload({ pax: 2, costPerPlate: 100 }));
 
     // Accommodation: no check_in/check_out set, so total_days falls back
-    // to 1 — 5000 tariff × 2 rooms × 1 day × 5% GST = 10500.
+    // to 1 — 5000 tariff × 2 rooms × 1 night = 10000 taxable; the summary
+    // adds 5% GST (DEV-07) → 10500.
     await patchAccommodationAs(token, eventId, {
       roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2 }],
     });
@@ -2132,6 +2146,8 @@ describe('GET /events/:id/quotation-summary', () => {
       venueTotal: 8000,
       foodSubtotal: 3700,
       foodTotalInclGst: 3885,
+      accommodationTaxable: 10000,
+      accommodationGst: 500,
       accommodationTotal: 10500,
       extrasTotal: 3000,
       grandTotal: 25385,
@@ -3301,5 +3317,155 @@ describe('GET /calendar', () => {
     const response = await getCalendarAs(token, 9, 2026);
 
     expect(response.body).toHaveLength(2);
+  });
+});
+
+// DEV-07 (UI Redesign D2/D3, example_quatation_3.pdf): occupancy is a
+// snapshot of the Room Type master, line amounts are taxable (no GST), and
+// the block carries a whole-percent discount.
+describe('Accommodation — DEV-07 occupancy snapshot and discount', () => {
+  const EXAMPLE_3_MASTER = [
+    { name: 'Delux', occupancy: 2, defaultTariff: 2800 },
+    { name: 'Executive', occupancy: 3, defaultTariff: 3800 },
+    { name: 'Family Room', occupancy: 6, defaultTariff: 6000 },
+    { name: 'Extra Beds', occupancy: 0, defaultTariff: 700 },
+  ];
+
+  // The client sends occupancy 99 on purpose — the server must ignore it.
+  const EXAMPLE_3_LINES = [
+    { roomType: 'Delux', occupancy: 99, tariff: 2800, noOfRooms: 14 },
+    { roomType: 'Executive', occupancy: 99, tariff: 3800, noOfRooms: 2 },
+    { roomType: 'Family Room', occupancy: 99, tariff: 6000, noOfRooms: 2 },
+    { roomType: 'Extra Beds', occupancy: 99, tariff: 700, noOfRooms: 0 },
+  ];
+
+  const seedMaster = () => RoomType.insertMany(EXAMPLE_3_MASTER);
+
+  it('overwrites each line’s occupancy with the Room Type master’s (case-insensitive), ignoring the client value', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    await seedMaster();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchAccommodationAs(token, created.body.id, {
+      roomLines: [
+        { roomType: 'delux', occupancy: 99, tariff: 2800, noOfRooms: 1 },
+        { roomType: 'Family Room', tariff: 6000, noOfRooms: 1 },
+      ],
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.roomLines.map((line: { occupancy: number }) => line.occupancy)).toEqual([2, 6]);
+    const stored = await Event.findById(created.body.id);
+    expect(stored?.accommodation?.roomLines.map((line) => line.occupancy)).toEqual([2, 6]);
+  });
+
+  it('keeps the sent occupancy (or 0) for a room type missing from the master', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchAccommodationAs(token, created.body.id, {
+      roomLines: [
+        { roomType: 'Tent', occupancy: 3, tariff: 1000, noOfRooms: 1 },
+        { roomType: 'Hut', tariff: 1000, noOfRooms: 1 },
+      ],
+    });
+
+    expect(response.body.roomLines.map((line: { occupancy: number }) => line.occupancy)).toEqual([3, 0]);
+  });
+
+  it('snapshots occupancy on POST /events too, and a later master edit does not rewrite a saved line', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    await seedMaster();
+
+    const created = await createEventAs(
+      token,
+      validPayload(manager.id, { accommodation: { roomLines: [EXAMPLE_3_LINES[0]] } })
+    );
+    await RoomType.updateOne({ name: 'Delux' }, { occupancy: 3 });
+    const response = await getEventAs(token, created.body.id);
+
+    expect(created.body.accommodation.roomLines[0].occupancy).toBe(2);
+    expect(response.body.accommodation.roomLines[0].occupancy).toBe(2);
+  });
+
+  it('reproduces example 3: taxable lines 78400 + 15200 + 24000 + 0 → 1,17,600, 10% off → 1,05,840', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    await seedMaster();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchAccommodationAs(token, created.body.id, {
+      checkIn: '2027-05-13T00:00:00.000Z',
+      checkOut: '2027-05-15T00:00:00.000Z',
+      roomLines: EXAMPLE_3_LINES,
+      discountPercent: 10,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      totalNights: 2,
+      totalOccupancy: 46,
+      totalCharges: 117600,
+      discountPercent: 10,
+      discountAmount: 11760,
+      finalAmount: 105840,
+    });
+    expect(response.body.roomLines.map((line: { totalTaxable: number }) => line.totalTaxable)).toEqual([
+      78400, 15200, 24000, 0,
+    ]);
+  });
+
+  it('feeds the Final Amount + 5% GST into the quotation summary — example 3’s ₹ 1,11,132', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    await seedMaster();
+    const created = await createEventAs(token, validPayload(manager.id));
+    await patchAccommodationAs(token, created.body.id, {
+      checkIn: '2027-05-13T00:00:00.000Z',
+      checkOut: '2027-05-15T00:00:00.000Z',
+      roomLines: EXAMPLE_3_LINES,
+      discountPercent: 10,
+    });
+
+    const response = await getQuotationSummaryAs(token, created.body.id);
+
+    expect(response.body).toMatchObject({
+      accommodationTaxable: 105840,
+      accommodationGst: 5292,
+      accommodationTotal: 111132,
+    });
+  });
+
+  it.each([
+    ['above 100', 101],
+    ['negative', -1],
+    ['fractional', 10.5],
+  ])('rejects a discountPercent that is %s with 400', async (_label, discountPercent) => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const response = await patchAccommodationAs(token, created.body.id, { discountPercent });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('accepts 0 and 100, and logs a discountPercent change to the Change Log', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+
+    const full = await patchAccommodationAs(token, created.body.id, { discountPercent: 100 });
+    const none = await patchAccommodationAs(token, created.body.id, { discountPercent: 0 });
+
+    expect(full.status).toBe(200);
+    expect(full.body.discountPercent).toBe(100);
+    expect(none.body.discountPercent).toBe(0);
+    const entries = await ChangeLogEntry.find({ entityId: created.body.id, field: 'discountPercent' });
+    expect(entries.map((entry) => entry.newValue)).toEqual([100, 0]);
   });
 });

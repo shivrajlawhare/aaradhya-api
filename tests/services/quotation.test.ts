@@ -3,6 +3,15 @@ import { ItemType } from '../../src/models/event.js';
 import { computeTotalCostSummary, type QuotationSessionInput } from '../../src/services/quotation.js';
 
 describe('computeTotalCostSummary', () => {
+  // example_quatation_3.pdf's Accomodation row: 105840 · 5292 · ₹ 1,11,132.
+  it('adds 5% GST to the accommodation Final Amount — example 3', () => {
+    const summary = computeTotalCostSummary({ sessions: [], accommodationFinalAmount: 105840 });
+
+    expect(summary.accommodationTaxable).toBe(105840);
+    expect(summary.accommodationGst).toBe(5292);
+    expect(summary.accommodationTotal).toBe(111132);
+  });
+
   // Fixture Event: 2 sessions, known venue costs, known Meal Item costs (one
   // Event Item mixed in to prove it contributes nothing), known GST%, known
   // accommodation total, known extras — this story's own AC-1 fixture shape.
@@ -27,12 +36,12 @@ describe('computeTotalCostSummary', () => {
     // venueTotal = 5000 + 3000 = 8000.
     // foodSubtotal = 2000 + 1500 + 200 = 3700.
     // foodTotalInclGst = 3700 × 1.18 = 4366.
-    // accommodationTotal = 11800 (passed through as-is).
+    // accommodation: Final Amount 11800 + its own 5% GST 590 = 12390 (DEV-07).
     // extrasTotal = 1000 + 1500 + 500 = 3000.
-    // grandTotal = 8000 + 4366 + 11800 + 3000 = 27166.
+    // grandTotal = 8000 + 4366 + 12390 + 3000 = 27756.
     const summary = computeTotalCostSummary({
       sessions: fixtureSessions,
-      accommodationTotalCharges: 11800,
+      accommodationFinalAmount: 11800,
       extras: { decoration: 1000, photographer: 1500, bhatji: 500 },
       gstRatePercent: 18,
     });
@@ -41,25 +50,27 @@ describe('computeTotalCostSummary', () => {
       venueTotal: 8000,
       foodSubtotal: 3700,
       foodTotalInclGst: 4366,
-      accommodationTotal: 11800,
+      accommodationTaxable: 11800,
+      accommodationGst: 590,
+      accommodationTotal: 12390,
       extrasTotal: 3000,
-      grandTotal: 27166,
+      grandTotal: 27756,
     });
   });
 
-  it('applies GST only to the food subtotal, leaving venue/accommodation/extras untouched (AC-3)', () => {
+  it('applies the food GST only to the food subtotal, leaving venue/extras untouched and accommodation on its own 5% (AC-3)', () => {
     const summary = computeTotalCostSummary({
       sessions: fixtureSessions,
-      accommodationTotalCharges: 11800,
+      accommodationFinalAmount: 11800,
       extras: { decoration: 1000, photographer: 1500, bhatji: 500 },
       gstRatePercent: 18,
     });
 
-    // venueTotal, accommodationTotal, and extrasTotal each equal their raw,
-    // pre-GST inputs exactly — none of them was scaled by the 18% rate that
-    // did change foodSubtotal (3700) into foodTotalInclGst (4366).
+    // venueTotal and extrasTotal equal their raw inputs — neither was scaled
+    // by the 18% food rate; accommodation gets its own fixed 5%, not 18%.
     expect(summary.venueTotal).toBe(8000);
-    expect(summary.accommodationTotal).toBe(11800);
+    expect(summary.accommodationGst).toBe(590);
+    expect(summary.accommodationTotal).toBe(12390);
     expect(summary.extrasTotal).toBe(3000);
   });
 
@@ -78,13 +89,15 @@ describe('computeTotalCostSummary', () => {
       venueTotal: 0,
       foodSubtotal: 0,
       foodTotalInclGst: 0,
+      accommodationTaxable: 0,
+      accommodationGst: 0,
       accommodationTotal: 0,
       extrasTotal: 0,
       grandTotal: 0,
     });
   });
 
-  it('defaults accommodationTotalCharges and extras to 0 when omitted', () => {
+  it('defaults the accommodation Final Amount and extras to 0 when omitted', () => {
     const summary = computeTotalCostSummary({ sessions: [] });
 
     expect(summary.accommodationTotal).toBe(0);
@@ -94,13 +107,13 @@ describe('computeTotalCostSummary', () => {
   it('produces a grand total equal to the pre-GST food subtotal plus everything else at a 0% GST rate', () => {
     const summary = computeTotalCostSummary({
       sessions: fixtureSessions,
-      accommodationTotalCharges: 11800,
+      accommodationFinalAmount: 11800,
       extras: { decoration: 1000, photographer: 1500, bhatji: 500 },
       gstRatePercent: 0,
     });
 
     expect(summary.foodTotalInclGst).toBe(summary.foodSubtotal);
-    expect(summary.grandTotal).toBe(8000 + 3700 + 11800 + 3000);
+    expect(summary.grandTotal).toBe(8000 + 3700 + 12390 + 3000);
   });
 
   it('defaults to the Food GST rate (5%) when none is passed', () => {
