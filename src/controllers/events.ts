@@ -34,6 +34,7 @@ import { filterEventForRole } from '../services/event-visibility.js';
 import { computeTotalCost } from '../services/item.js';
 import { computeBalance } from '../services/payment.js';
 import { computeTotalCostSummary } from '../services/quotation.js';
+import { toDepartmentNotesResult, toSessionSetupResult } from '../services/session-result.js';
 import {
   computeDurationDays,
   computeIsMultiDay,
@@ -240,18 +241,6 @@ type SessionSubdocument = EventDocument['sessions'][number];
 // same reasoning SessionSubdocument documents above for `sessions`.
 type ItemSubdocument = SessionSubdocument['items'][number];
 
-const toPublicSessionSetup = (setup: SessionSetupAttributes) => ({
-  seating: setup.seating ?? null,
-  tableCount: setup.tableCount,
-  chairCount: setup.chairCount,
-  stage: setup.stage,
-  buffet: setup.buffet,
-  registrationDesk: setup.registrationDesk,
-  vipSeating: setup.vipSeating,
-  brideGroomSeating: setup.brideGroomSeating,
-  notes: setup.notes ?? null,
-});
-
 // mealName/pax/costPerPlate are Meal-only; eventName/venue are Event-only —
 // nullable, not just absent, same convention setup's own seating/notes
 // already use. total_cost is always freshly computed from whatever
@@ -300,7 +289,8 @@ const toPublicSession = (session: SessionSubdocument) => ({
   sessionStatus: session.sessionStatus,
   durationDays: computeDurationDays(session),
   isMultiDay: computeIsMultiDay(session),
-  setup: toPublicSessionSetup(session.setup),
+  setup: toSessionSetupResult(session.setup),
+  departmentNotes: toDepartmentNotesResult(session.departmentNotes),
   items: session.items.map(toPublicItem),
 });
 
@@ -429,6 +419,7 @@ const buildSessionsInput = async (
       endTime: session.endTime,
       pax: session.pax,
       setup: session.setup,
+      departmentNotes: session.departmentNotes,
       items: resolvedItems,
     });
   }
@@ -1240,6 +1231,7 @@ export const createSession: AppRouteMutationImplementation<typeof contract.creat
     endTime: body.endTime,
     pax: body.pax,
     setup: body.setup,
+    departmentNotes: body.departmentNotes,
   });
   existing.sessions.push(session);
 
@@ -1361,7 +1353,7 @@ const applySessionUpdate = (session: SessionSubdocument, body: UpdateSessionBody
     session.sessionStatus = body.sessionStatus;
   }
   if (body.setup !== undefined) {
-    const oldValue = toPublicSessionSetup(session.setup);
+    const oldValue = toSessionSetupResult(session.setup);
     const newValue = normalizeSubmittedSetup(body.setup);
     if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
       changes.push({ field: `sessions[${identity}].setup`, oldValue, newValue });
@@ -1374,6 +1366,20 @@ const applySessionUpdate = (session: SessionSubdocument, body: UpdateSessionBody
       // field-level defaults still fill every omitted key at the Mongoose
       // level, same as they would on creation.
       session.set('setup', body.setup);
+    }
+  }
+
+  // DEV-12 — one whole-object field, like setup ("Notes for Department" in
+  // the Activity tab).
+  if (body.departmentNotes !== undefined) {
+    const oldValue = toDepartmentNotesResult(session.departmentNotes);
+    const newValue = toDepartmentNotesResult({
+      ...body.departmentNotes,
+      maintenance: body.departmentNotes.maintenance ?? [],
+    });
+    if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+      changes.push({ field: `sessions[${identity}].departmentNotes`, oldValue, newValue });
+      session.set('departmentNotes', body.departmentNotes);
     }
   }
 

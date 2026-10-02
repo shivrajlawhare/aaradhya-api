@@ -3469,3 +3469,94 @@ describe('Accommodation — DEV-07 occupancy snapshot and discount', () => {
     expect(entries.map((entry) => entry.newValue)).toEqual([100, 0]);
   });
 });
+
+describe('Session Notes for Department (DEV-12, D4)', () => {
+  const NOTES = {
+    vegPax: 4,
+    nonVegPax: 16,
+    maintenance: ['Sound System'],
+    restaurantNote: 'Billing will be as per a la carte.',
+  };
+
+  const seedEventWithSession = async (token: string, overrides: Record<string, unknown> = {}) => {
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id));
+    const session = await postSessionAs(token, created.body.id, validSessionPayload(overrides));
+    return { eventId: created.body.id, session: session.body };
+  };
+
+  it('stores the notes given when a Session is added', async () => {
+    const { token } = await seedCaller();
+
+    const { session } = await seedEventWithSession(token, { departmentNotes: NOTES });
+
+    expect(session.departmentNotes).toEqual(NOTES);
+  });
+
+  it('reads empty notes for a Session added without them', async () => {
+    const { token } = await seedCaller();
+
+    const { session } = await seedEventWithSession(token);
+
+    expect(session.departmentNotes).toEqual({ vegPax: null, nonVegPax: null, maintenance: [], restaurantNote: null });
+  });
+
+  it('accepts notes on POST /events sessions too', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+
+    const response = await createEventAs(
+      token,
+      validPayload(manager.id, { sessions: [{ ...validSessionPayload(), departmentNotes: NOTES }] })
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body.sessions[0].departmentNotes).toEqual(NOTES);
+  });
+
+  it('replaces the notes on PATCH and logs one "departmentNotes" change, none when unchanged', async () => {
+    const { token } = await seedCaller();
+    const { eventId, session } = await seedEventWithSession(token, { departmentNotes: NOTES });
+
+    const response = await patchSessionAs(token, eventId, session.id, {
+      departmentNotes: { vegPax: 10, nonVegPax: 10, maintenance: [] },
+    });
+    await patchSessionAs(token, eventId, session.id, {
+      departmentNotes: { vegPax: 10, nonVegPax: 10, maintenance: [] },
+    });
+
+    expect(response.body.departmentNotes).toEqual({ vegPax: 10, nonVegPax: 10, maintenance: [], restaurantNote: null });
+    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: eventId });
+    expect(entries.map((entry) => [entry.field, entry.oldValue, entry.newValue])).toEqual([
+      [
+        'sessions[Wedding].departmentNotes',
+        NOTES,
+        { vegPax: 10, nonVegPax: 10, maintenance: [], restaurantNote: null },
+      ],
+    ]);
+  });
+
+  it('rejects a negative or fractional pax split', async () => {
+    const { token } = await seedCaller();
+    const { eventId, session } = await seedEventWithSession(token);
+
+    const negative = await patchSessionAs(token, eventId, session.id, { departmentNotes: { vegPax: -1 } });
+    const fractional = await patchSessionAs(token, eventId, session.id, { departmentNotes: { nonVegPax: 2.5 } });
+
+    expect(negative.status).toBe(400);
+    expect(fractional.status).toBe(400);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'shows the notes to role %s on GET /events/:id',
+    async (role) => {
+      const { token: managerToken } = await seedCaller();
+      const { eventId } = await seedEventWithSession(managerToken, { departmentNotes: NOTES });
+      const { token } = await seedCaller(role);
+
+      const response = await getEventAs(token, eventId);
+
+      expect(response.body.sessions[0].departmentNotes).toEqual(NOTES);
+    }
+  );
+});

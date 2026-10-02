@@ -51,6 +51,7 @@ const fixtureEvent: VisibilityEvent = {
       sessionStatus: SessionStatus.Active,
       durationDays: 1,
       isMultiDay: false,
+      departmentNotes: { vegPax: 150, nonVegPax: 50, maintenance: ['Sound System'], restaurantNote: null },
       setup: {
         seating: SeatingArrangement.Theatre,
         tableCount: 10,
@@ -110,6 +111,18 @@ describe('filterEventForRole', () => {
     for (const role of [Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception]) {
       const result = filterEventForRole(fixtureEvent, role);
       expect(result.sessions[0]?.venue).toBe('Lawn');
+    }
+  });
+
+  it('keeps the Notes for Department for all four roles (DEV-12 — they carry no prices)', () => {
+    for (const role of [Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception]) {
+      const result = filterEventForRole(fixtureEvent, role);
+      expect(result.sessions[0]?.departmentNotes).toEqual({
+        vegPax: 150,
+        nonVegPax: 50,
+        maintenance: ['Sound System'],
+        restaurantNote: null,
+      });
     }
   });
 

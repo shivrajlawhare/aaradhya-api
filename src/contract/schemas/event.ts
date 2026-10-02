@@ -208,6 +208,22 @@ export const sessionSetupInputSchema = z.object({
   notes: z.string().trim().min(1).optional(),
 });
 
+// CR-1 D4 (DEV-12) — Notes for Department, optional like setup. A whole
+// object on update: a caller resends the full notes it wants.
+export const sessionDepartmentNotesInputSchema = z.object({
+  vegPax: z.number().int().min(0).optional(),
+  nonVegPax: z.number().int().min(0).optional(),
+  maintenance: z.array(z.string().trim().min(1)).optional(),
+  restaurantNote: z.string().trim().min(1).optional(),
+});
+
+export const sessionDepartmentNotesResultSchema = z.object({
+  vegPax: z.number().nullable(),
+  nonVegPax: z.number().nullable(),
+  maintenance: z.array(z.string()),
+  restaurantNote: z.string().nullable(),
+});
+
 // sessionType/venue required (this story's own Flow: "choosing type,
 // venue... "); venueCost/pax/startTime/endTime/setup are optional, falling
 // back to sessionSchema's own field-level defaults (STORY-026) when
@@ -227,6 +243,7 @@ export const createSessionBodySchema = z.object({
   endTime: z.string().trim().min(1).optional(),
   pax: z.number().min(0).optional(),
   setup: sessionSetupInputSchema.optional(),
+  departmentNotes: sessionDepartmentNotesInputSchema.optional(),
 });
 
 // Exported — STORY-050's dashboard row reuses this directly for
@@ -270,6 +287,7 @@ export const updateSessionBodySchema = z.object({
   // established — a caller resends the full setup it wants, not a sparse
   // patch of just the sub-fields that changed.
   setup: sessionSetupInputSchema.optional(),
+  departmentNotes: sessionDepartmentNotesInputSchema.optional(),
 });
 
 // Each entry either references an existing Menu Item by id, or a name to
@@ -337,6 +355,7 @@ const createEventSessionInputSchema = z.object({
   endTime: z.string().trim().min(1).optional(),
   pax: z.number().min(0).optional(),
   setup: sessionSetupInputSchema.optional(),
+  departmentNotes: sessionDepartmentNotesInputSchema.optional(),
   items: z.array(createItemBodySchema).optional(),
 });
 
@@ -447,6 +466,7 @@ export const sessionResultSchema = z.object({
   durationDays: z.number(),
   isMultiDay: z.boolean(),
   setup: sessionSetupResultSchema,
+  departmentNotes: sessionDepartmentNotesResultSchema,
   items: z.array(itemResultSchema),
 });
 

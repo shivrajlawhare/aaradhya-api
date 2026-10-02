@@ -140,6 +140,8 @@ export const SESSION_STATUS_VALUES: SessionStatus[] = Object.values(SessionStatu
 export enum SeatingArrangement {
   Theatre = 'Theatre',
   RoundTables = 'RoundTables',
+  // DEV-12 — the Notes for Department reference's "Square Table Setup".
+  SquareTables = 'SquareTables',
   Classroom = 'Classroom',
   UShape = 'UShape',
   Cluster = 'Cluster',
@@ -165,6 +167,17 @@ export interface SessionSetupAttributes {
   vipSeating: boolean;
   brideGroomSeating: boolean;
   notes?: string;
+}
+
+// CR-1 D4 — the Notes for Department fields on a Session, printed on its
+// Banquet Event Order page: the Veg / Non-Veg split of the pax, the
+// maintenance items (e.g. "Sound System") and a note for the restaurant.
+// All optional; maintenance is always an array.
+export interface SessionDepartmentNotesAttributes {
+  vegPax?: number;
+  nonVegPax?: number;
+  maintenance: string[];
+  restaurantNote?: string;
 }
 
 // SRS §4.5 — a single line within a Session: either a Meal Item (food/
@@ -239,6 +252,7 @@ export interface SessionAttributes {
   pax: number;
   sessionStatus: SessionStatus;
   setup: SessionSetupAttributes;
+  departmentNotes: SessionDepartmentNotesAttributes;
   // Typed as a DocumentArray (not plain ItemAttributes[], unlike when
   // STORY-031 first added this field) — STORY-032 is the first place an
   // Item's own generated sub-id needs to come back out, the same reason
@@ -389,6 +403,16 @@ const sessionSetupSchema = new Schema<SessionSetupAttributes>(
   { _id: false }
 );
 
+const sessionDepartmentNotesSchema = new Schema<SessionDepartmentNotesAttributes>(
+  {
+    vegPax: { type: Number, min: 0 },
+    nonVegPax: { type: Number, min: 0 },
+    maintenance: { type: [{ type: String, trim: true }], default: [] },
+    restaurantNote: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
 // Returns a Mongoose `required` function for "only required when this
 // Item's own type matches" — a regular function (not an arrow function),
 // same reason sessionSchema's own endDate validator below is, so `this`
@@ -466,6 +490,9 @@ const sessionSchema = new Schema<SessionAttributes>({
   // documentsChecklist above — every Session genuinely has a setup record
   // from the moment it's added, even if every field is still at its default.
   setup: { type: sessionSetupSchema, required: true, default: () => ({}) },
+  // DEV-12 — always present (like setup), so a Session saved before it
+  // existed reads back with an empty maintenance list.
+  departmentNotes: { type: sessionDepartmentNotesSchema, required: true, default: () => ({}) },
   // Zero or more at the schema level, same reasoning as sessions on Event —
   // this story only defines the shape; any create/edit endpoint (and
   // whatever "at least one Item" rule, if any) is a later story's job.

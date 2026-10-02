@@ -836,6 +836,31 @@ request shape, not which credential was wrong.
   section (`entityType: 'OneDayEventTemplate'`, `field` = the section name),
   sharing one `groupId`. Events already created are never touched.
 
+### Session Notes for Department + GET /events/:id/banquet-event-order(.pdf) — SETTLED (DEV-12)
+
+- CR-1 D4: every Session has `departmentNotes { vegPax?, nonVegPax?,
+  maintenance: string[], restaurantNote? }` (always present, like `setup`;
+  a Session saved before it existed reads back empty). Accepted, optional,
+  on POST /events sessions, POST .../sessions and PATCH .../sessions/:sid
+  (a whole-object replace, like `setup`). Pax splits are whole numbers ≥ 0.
+  A change is one Change Log entry, `sessions[<type>].departmentNotes`
+  (shown as "Notes for Department" in the Activity tab).
+- The notes carry no money, so `filterEventForRole` keeps them for every
+  role.
+- **GET /events/:id/banquet-event-order** — any authenticated role (D5).
+  Built field by field (`services/banquet-event-order.ts`), so it carries
+  no price of any kind: the client name (D7 rule), then per **Active**
+  session in date/time order its dates, times, pax, venue, session type,
+  meals (name, times, menu item **names**), ceremony names, setup and the
+  department notes.
+- **GET /events/:id/banquet-event-order.pdf** — any authenticated role.
+  The same `browser-pdf.ts` mechanism as the quotation PDF, rendering the
+  web route `/events/:id/notes-for-department?print=1` signed in as the
+  caller; `Content-Disposition: attachment;
+  filename="<eventId>-notes-for-department.pdf"`, `Cache-Control: no-store`.
+- `SeatingArrangement` gained `SquareTables` (the reference BEO's "Square
+  Table Setup").
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

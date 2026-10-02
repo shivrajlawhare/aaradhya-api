@@ -1,6 +1,7 @@
 import { initServer } from '@ts-rest/express';
 import { contract } from './contract/index.js';
 import { login } from './controllers/auth.js';
+import { getBanquetEventOrder, getBanquetEventOrderPdf } from './controllers/banquet-event-order.js';
 import { listChangeLog } from './controllers/change-log.js';
 import { getDashboard } from './controllers/dashboard.js';
 import { createEventType, listEventTypes, updateEventType } from './controllers/event-types.js';
@@ -111,6 +112,14 @@ export const router = server.router(contract, {
   getQuotationPdf: {
     middleware: eventManagerOnly,
     handler: getQuotationPdf,
+  },
+  getBanquetEventOrder: {
+    middleware: authenticatedOnly,
+    handler: getBanquetEventOrder,
+  },
+  getBanquetEventOrderPdf: {
+    middleware: authenticatedOnly,
+    handler: getBanquetEventOrderPdf,
   },
   createSession: {
     middleware: eventManagerOnly,

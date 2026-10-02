@@ -1,6 +1,7 @@
 import { initContract } from '@ts-rest/core';
 import { z } from 'zod';
 import { loginBodySchema, loginResultSchema } from './schemas/auth.js';
+import { banquetEventOrderResultSchema } from './schemas/banquet-event-order.js';
 import { changeLogEntryResultSchema, listChangeLogQuerySchema } from './schemas/change-log.js';
 import { apiErrorSchema } from './schemas/common.js';
 import { dashboardResultSchema } from './schemas/dashboard.js';
@@ -288,6 +289,26 @@ export const contract = c.router({
       404: apiErrorSchema,
     },
     summary: 'Generate the client-facing Quotation PDF from live Event data (Event Manager only)',
+  },
+  getBanquetEventOrder: {
+    method: 'GET',
+    path: '/events/:id/banquet-event-order',
+    pathParams: eventIdParamsSchema,
+    responses: {
+      200: banquetEventOrderResultSchema,
+      404: apiErrorSchema,
+    },
+    summary: 'The Banquet Event Order (Notes for Department) — no prices (any authenticated caller)',
+  },
+  getBanquetEventOrderPdf: {
+    method: 'GET',
+    path: '/events/:id/banquet-event-order.pdf',
+    pathParams: eventIdParamsSchema,
+    responses: {
+      200: c.otherResponse({ contentType: 'application/pdf', body: c.type<Buffer>() }),
+      404: apiErrorSchema,
+    },
+    summary: 'Generate the Notes for Department PDF from live Event data (any authenticated caller)',
   },
   createSession: {
     method: 'POST',

@@ -13,6 +13,15 @@ export interface VisibilitySessionSetup {
   notes: string | null;
 }
 
+// DEV-12 — Notes for Department carry no money, so every role sees them
+// (they print on the Banquet Event Order, which all roles can open).
+export interface VisibilityDepartmentNotes {
+  vegPax: number | null;
+  nonVegPax: number | null;
+  maintenance: string[];
+  restaurantNote: string | null;
+}
+
 export interface VisibilityItem {
   id: string;
   type: ItemType;
@@ -42,6 +51,7 @@ export interface VisibilitySession {
   durationDays: number;
   isMultiDay: boolean;
   setup?: VisibilitySessionSetup;
+  departmentNotes: VisibilityDepartmentNotes;
   items?: VisibilityItem[];
 }
 
