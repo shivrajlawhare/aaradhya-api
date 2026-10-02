@@ -277,20 +277,17 @@ describe('GET /dashboard', () => {
     const tokenForRole = async (role: Role, managerToken: string): Promise<string> =>
       role === Role.EventManager ? managerToken : (await seedCaller(role)).token;
 
-    it('includes clientContacts for F&B and Reception, omits it for Housekeeping — genuinely absent from the raw JSON', async () => {
+    // CR-1 D17: Housekeeping now sees client contacts too.
+    it('includes clientContacts for every role', async () => {
       const { managerToken } = await buildUpcomingFixture();
 
-      for (const role of [Role.EventManager, Role.FnBHead, Role.Reception]) {
+      for (const role of [Role.EventManager, Role.FnBHead, Role.Housekeeping, Role.Reception]) {
         const token = await tokenForRole(role, managerToken);
         const response = await getDashboardAs(token);
         expect(response.body.upcomingEvents[0].clientContacts).toEqual([
           { name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' },
         ]);
       }
-
-      const housekeepingToken = await tokenForRole(Role.Housekeeping, managerToken);
-      const housekeepingResponse = await getDashboardAs(housekeepingToken);
-      expect(housekeepingResponse.body.upcomingEvents[0]).not.toHaveProperty('clientContacts');
     });
 
     it('venue/pax/date/status are visible to all four roles', async () => {

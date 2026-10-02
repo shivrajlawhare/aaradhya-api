@@ -158,6 +158,11 @@ describe('filterEventForRole', () => {
   describe('Housekeeping', () => {
     const result = filterEventForRole(fixtureEvent, Role.Housekeeping);
 
+    // CR-1 D17: Housekeeping sees whose event it is.
+    it('includes client contacts (D17)', () => {
+      expect(result.clientContacts).toEqual(fixtureEvent.clientContacts);
+    });
+
     it('includes setup and accommodation (rooms booked)', () => {
       expect(result.sessions[0]!.setup).toEqual(fixtureEvent.sessions[0]!.setup);
       expect(result.accommodation).toBeDefined();
@@ -177,10 +182,9 @@ describe('filterEventForRole', () => {
       expect(raw.accommodation.roomLines[0]).not.toHaveProperty('tariff');
     });
 
-    it('genuinely omits menu/item fields and client contacts', () => {
+    it('genuinely omits menu/item fields', () => {
       expect(result.sessions[0]!.items).toBeUndefined();
-      expect(result.clientContacts).toBeUndefined();
-      expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty('clientContacts');
+      expect(JSON.parse(JSON.stringify(result.sessions[0]))).not.toHaveProperty('items');
     });
   });
 

@@ -246,7 +246,7 @@ request shape, not which credential was wrong.
   `eventResultSchema` and its nested schemas, every role-conditional field
   turned `.optional()`). `EventManager` sees everything unchanged; every
   other role gets `payment`/`extras`/session `venueCost`/Item
-  `costPerPlate`+`totalCost`/room-line `tariff`+`totalInclGst`/
+  `costPerPlate`+`totalCost`/room-line `tariff`+`totalTaxable`/
   accommodation `totalCharges` genuinely absent from the response (not
   present-but-null) — see `src/services/event-visibility.ts` for the full
   per-role field matrix and its reasoning, and STORY-046's own Decisions
@@ -798,8 +798,9 @@ request shape, not which credential was wrong.
   own `toPublicEvent()` output run through that exact function, then the
   FR-ROLE-2 columns (`date`/`venue`/`pax`/`status`/`clientContacts`) are
   read off the *already-filtered* result. `clientContacts` is present/
-  absent per role exactly as STORY-046 already decided (F&B/Reception yes,
-  Housekeeping no) — genuinely absent from the raw JSON, not null.
+  absent per role exactly as STORY-046 decided — F&B/Reception yes, and
+  Housekeeping too since CR-1 D17 (DEV-10) — genuinely absent from the raw
+  JSON for any role that can't see it, not null.
 - `date`/`venue`/`pax` on each row come from the Event's own **soonest
   upcoming Session** — an Event with more than one qualifying Session
   contributes exactly one row, not one per Session.

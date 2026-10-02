@@ -143,7 +143,8 @@ export interface VisibilityEvent {
  *   in the same class, and the story's own Decisions record this as a
  *   deliberate policy call, not an SRS-mandated one.
  * - `clientContacts`: F&B ("POC name/contact") and Reception ("Bride/Groom
- *   names") per SRS §3.2/§3.4; not Housekeeping (§3.3 never mentions it).
+ *   names") per SRS §3.2/§3.4, and Housekeeping (CR-1 D17: they need to
+ *   know whose event it is; read-only in the app like every role but EM).
  * - `accommodation`: Housekeeping and Reception ("rooms booked") per
  *   §3.3/§3.4; not F&B (§3.2 never mentions rooms).
  * - `setup`: Housekeeping only ("seating/setup requirements, hall setup"
@@ -164,7 +165,7 @@ export const filterEventForRole = (event: VisibilityEvent, role: Role): Visibili
     return event;
   }
 
-  const canSeeClientContacts = role === Role.FnBHead || role === Role.Reception;
+  const canSeeClientContacts = role === Role.FnBHead || role === Role.Housekeeping || role === Role.Reception;
   const canSeeAccommodation = role === Role.Housekeeping || role === Role.Reception;
   const canSeeSetup = role === Role.Housekeeping;
   const canSeeMenu = role === Role.FnBHead;

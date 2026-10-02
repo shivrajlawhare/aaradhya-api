@@ -1010,7 +1010,7 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
     expect(response.body.sessions[0].items[0]).not.toHaveProperty('totalCost');
   });
 
-  it('Housekeeping omits payment/menu/item fields, includes setup/rooms — genuinely absent from the raw JSON', async () => {
+  it('Housekeeping omits payment/menu/item fields, includes setup/rooms and client contacts (D17) — genuinely absent from the raw JSON', async () => {
     const { eventId } = await buildFixtureEvent();
     const { token } = await seedCaller(Role.Housekeeping);
 
@@ -1021,9 +1021,9 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
     expect(response.body.sessions[0].pax).toBe(200);
     expect(response.body.sessions[0].setup).toMatchObject({ seating: 'Theatre', tableCount: 5 });
     expect(response.body.accommodation.roomLines[0]).toMatchObject({ roomType: 'Double', noOfRooms: 1 });
+    expect(response.body.clientContacts).toEqual([{ name: 'Priya Nair', contactNumber: '9876543210', role: 'Bride' }]);
     expect(response.body).not.toHaveProperty('payment');
     expect(response.body).not.toHaveProperty('extras');
-    expect(response.body).not.toHaveProperty('clientContacts');
     expect(response.body.sessions[0]).not.toHaveProperty('items');
     expect(response.body.sessions[0]).not.toHaveProperty('venueCost');
     expect(response.body.accommodation).not.toHaveProperty('totalCharges');
