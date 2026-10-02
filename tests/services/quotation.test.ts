@@ -12,6 +12,37 @@ describe('computeTotalCostSummary', () => {
     expect(summary.accommodationTotal).toBe(111132);
   });
 
+  // DEV-09: example_quatation_3.pdf end to end — the same figures the web
+  // Quotation document prints (Grand Total Rs. 9,75,412 /-).
+  it('reproduces example 3’s Total Cost Summary and Grand Total', () => {
+    const meal = (pax: number, costPerPlate: number) => ({ type: ItemType.Meal, pax, costPerPlate });
+    const summary = computeTotalCostSummary({
+      sessions: [
+        // Haldi 14/05/2027: Hi Tea, the Haldi ceremony, Mocktails, Dinner.
+        { venueCost: 60000, items: [meal(40, 150), { type: ItemType.Event }, meal(40, 40), meal(40, 650)] },
+        // Wedding 15/05/2027: Breakfast, Welcome Drink, Muhurta, Lunch, Hi-Tea.
+        {
+          venueCost: 120000,
+          items: [meal(150, 160), meal(1000, 20), { type: ItemType.Event }, meal(1000, 380), meal(200, 80)],
+        },
+      ],
+      accommodationFinalAmount: 105840,
+      extras: { extraLineItems: [{ amount: 150000 }, { amount: 30000 }, { amount: 7000 }] },
+      gstRatePercent: 5,
+    });
+
+    expect(summary).toEqual({
+      venueTotal: 180000,
+      foodSubtotal: 473600,
+      foodTotalInclGst: 497280,
+      accommodationTaxable: 105840,
+      accommodationGst: 5292,
+      accommodationTotal: 111132,
+      extrasTotal: 187000,
+      grandTotal: 975412,
+    });
+  });
+
   // Fixture Event: 2 sessions, known venue costs, known Meal Item costs (one
   // Event Item mixed in to prove it contributes nothing), known GST%, known
   // accommodation total, known extras — this story's own AC-1 fixture shape.
