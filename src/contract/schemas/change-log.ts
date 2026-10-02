@@ -15,6 +15,10 @@ export const changeLogEntryResultSchema = z.object({
   oldValue: z.unknown(),
   newValue: z.unknown(),
   changedBy: z.string(),
+  // DEV-13 — the actor's name, resolved server-side so a soft-deleted
+  // user (gone from GET /users) still shows by name. null only if the
+  // account no longer exists at all.
+  changedByName: z.string().nullable(),
   // STORY-081 — absent on any entry written before this field existed; the
   // frontend renders such an entry as its own single-item group.
   groupId: z.string().optional(),

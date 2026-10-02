@@ -2,6 +2,7 @@ import { verify } from '@node-rs/argon2';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
+import { ChangeLogEntry } from '../../src/models/change-log-entry.js';
 import { Role, User } from '../../src/models/user.js';
 import { signSessionToken } from '../../src/services/token.js';
 import { clearCollections, connectTestDb, disconnectTestDb } from '../support/db.js';
@@ -343,5 +344,118 @@ describe('PATCH /users/:id', () => {
     // the database on every call (STORY-003), so there's no grace period.
     const followUp = await listUsersAs(token);
     expect(followUp.status).toBe(401);
+  });
+});
+
+describe('DELETE /users/:id (DEV-13, D15 soft delete)', () => {
+  const deleteUserAs = (token: string, id: string) =>
+    request(app).delete(`/users/${id}`).set('Authorization', `Bearer ${token}`);
+
+  const seedStaff = (overrides: Record<string, unknown> = {}) =>
+    User.create({
+      name: 'Kiran More',
+      username: 'kiran',
+      passwordHash: 'not-used-in-these-tests',
+      role: Role.Housekeeping,
+      ...overrides,
+    });
+
+  it('returns 401 with no token', async () => {
+    const staff = await seedStaff();
+
+    const response = await request(app).delete(`/users/${staff.id}`);
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])('returns 403 for a caller with role %s', async (role) => {
+    const staff = await seedStaff({ username: 'target' });
+    const token = await seedCaller(role);
+
+    const response = await deleteUserAs(token, staff.id);
+
+    expect(response.status).toBe(403);
+  });
+
+  it.each([Role.FnBHead, Role.Housekeeping, Role.Reception])(
+    'soft-deletes a %s account: hidden from GET /users, deactivated, and logged',
+    async (role) => {
+      const token = await seedCaller();
+      const staff = await seedStaff({ role });
+
+      const response = await deleteUserAs(token, staff.id);
+
+      expect(response.status).toBe(204);
+      const stored = await User.findById(staff.id);
+      expect(stored?.deletedAt).toBeInstanceOf(Date);
+      expect(stored?.active).toBe(false);
+      const list = await listUsersAs(token);
+      expect(list.body.map((user: { id: string }) => user.id)).not.toContain(staff.id);
+      const entries = await ChangeLogEntry.find({ entityType: 'User', entityId: staff.id });
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.field).toBe('deletedAt');
+    }
+  );
+
+  it('refuses to delete an Event Manager with 400 "Event Managers can\'t be deleted."', async () => {
+    const token = await seedCaller();
+    const manager = await seedStaff({ username: 'other-manager', role: Role.EventManager });
+
+    const response = await deleteUserAs(token, manager.id);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toEqual({
+      code: 'EVENT_MANAGER_NOT_DELETABLE',
+      message: "Event Managers can't be deleted.",
+    });
+    expect((await User.findById(manager.id))?.deletedAt).toBeUndefined();
+  });
+
+  it('refuses to delete yourself', async () => {
+    const self = await User.create({
+      name: 'Self',
+      username: 'self',
+      passwordHash: 'not-used-in-these-tests',
+      role: Role.EventManager,
+    });
+    const token = await signSessionToken({ id: self.id, role: self.role });
+
+    const response = await deleteUserAs(token, self.id);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('CANNOT_DELETE_SELF');
+  });
+
+  it('returns 404 for an unknown or already-deleted account', async () => {
+    const token = await seedCaller();
+    const staff = await seedStaff({ deletedAt: new Date(), active: false });
+
+    const unknown = await deleteUserAs(token, '0123456789abcdef01234567');
+    const again = await deleteUserAs(token, staff.id);
+
+    expect(unknown.status).toBe(404);
+    expect(again.status).toBe(404);
+  });
+
+  it('can no longer be reactivated through PATCH /users/:id', async () => {
+    const token = await seedCaller();
+    const staff = await seedStaff();
+    await deleteUserAs(token, staff.id);
+
+    const response = await patchUserAs(token, staff.id, { active: true });
+
+    expect(response.status).toBe(404);
+    expect((await User.findById(staff.id))?.active).toBe(false);
+  });
+
+  it('locks out a deleted user’s existing session token', async () => {
+    const token = await seedCaller();
+    const staff = await seedStaff({ role: Role.FnBHead });
+    const staffToken = await signSessionToken({ id: staff.id, role: staff.role });
+    await deleteUserAs(token, staff.id);
+
+    const response = await request(app).get('/events').set('Authorization', `Bearer ${staffToken}`);
+
+    expect(response.status).toBe(401);
   });
 });

@@ -20,7 +20,9 @@ export const login = async ({ body }: LoginRequest): Promise<LoginResponse> => {
   const { username, password } = body;
 
   const account = await User.findOne({ username });
-  if (!account || !account.active) {
+  // A soft-deleted account (DEV-13) gets the same message as a wrong
+  // password — nothing tells a caller the username ever existed.
+  if (!account || !account.active || account.deletedAt) {
     return invalidCredentials;
   }
 

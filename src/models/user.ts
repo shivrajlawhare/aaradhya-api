@@ -21,6 +21,10 @@ export interface UserAttributes {
   passwordHash: string;
   role: Role;
   active: boolean;
+  // CR-1 D15 (DEV-13) — set by DELETE /users/:id: a soft delete. The account
+  // drops out of User Management and can't log in, but stays in the
+  // collection so past Activity still resolves its name.
+  deletedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,6 +40,7 @@ const userSchema = new Schema<UserAttributes>(
     role: { type: String, required: true, enum: ROLE_VALUES },
     // Deactivation without deleting history (SRS §4.9); flips both ways.
     active: { type: Boolean, default: true },
+    deletedAt: { type: Date },
   },
   { timestamps: true }
 );

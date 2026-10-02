@@ -861,6 +861,25 @@ request shape, not which credential was wrong.
 - `SeatingArrangement` gained `SquareTables` (the reference BEO's "Square
   Table Setup").
 
+### DELETE /users/:id (soft delete) + GET /change-log changedByName — SETTLED (DEV-13)
+
+- CR-1 D15: `requireRole(Role.EventManager)`. A **soft delete**: sets the
+  user's `deletedAt` and `active: false`, and writes one Change Log entry
+  (`entityType: 'User'`, `field: 'deletedAt'`). 204 on success.
+- 400 `EVENT_MANAGER_NOT_DELETABLE` ("Event Managers can't be deleted.")
+  for any Event Manager; 400 `CANNOT_DELETE_SELF` for the caller's own id
+  (checked first). 404 for an unknown or already-deleted account.
+- A deleted account is excluded from `GET /users`, can't be changed via
+  `PATCH /users/:id` (404), is refused at login with the usual
+  `INVALID_CREDENTIALS` message, and an existing token stops working
+  (`authenticate` checks `deletedAt` as well as `active`).
+- The document stays in the collection, and its username stays taken:
+  creating a new account with the same username is a 409.
+- `GET /change-log` entries now carry `changedByName`, resolved
+  server-side from every user — soft-deleted ones included — so the
+  Activity tab keeps showing names ("their past activity stays in the
+  history"). `null` only if no such user exists.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

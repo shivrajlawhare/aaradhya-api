@@ -41,7 +41,7 @@ export const authenticate = async (
   try {
     const claims = await verifySessionToken(token);
     const account = await User.findById(claims.id);
-    if (!account || !account.active) {
+    if (!account || !account.active || account.deletedAt) {
       res.status(401).json(unauthenticated);
       return;
     }

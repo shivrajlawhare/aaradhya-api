@@ -118,3 +118,23 @@ describe('POST /auth/login', () => {
     );
   });
 });
+
+describe('POST /auth/login — soft-deleted accounts (DEV-13)', () => {
+  it('rejects a deleted user with the usual invalid-credentials message', async () => {
+    await seedUser({ role: Role.Reception, deletedAt: new Date(), active: false });
+
+    const response = await login({ username: 'priya', password: PASSWORD });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual(INVALID_CREDENTIALS);
+  });
+
+  it('rejects a deleted user even if the account were still flagged active', async () => {
+    await seedUser({ role: Role.Reception, deletedAt: new Date() });
+
+    const response = await login({ username: 'priya', password: PASSWORD });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual(INVALID_CREDENTIALS);
+  });
+});

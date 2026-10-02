@@ -129,6 +129,17 @@ export const contract = c.router({
     },
     summary: 'Toggle active and/or change role on a User Account (Event Manager only)',
   },
+  deleteUser: {
+    method: 'DELETE',
+    path: '/users/:id',
+    pathParams: userIdParamsSchema,
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: 'Soft-delete a User Account — never an Event Manager or yourself (Event Manager only)',
+  },
   // Deliberately not GET /users?role=EventManager — that route is
   // EventManager-only (userResultSchema exposes username/active/timestamps
   // no other role should see); this is a narrower {id, name} shape any

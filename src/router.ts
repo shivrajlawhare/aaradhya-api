@@ -30,7 +30,7 @@ import { checkHealth } from './controllers/health.js';
 import { createMenuItem, listMenuItems, updateMenuItem } from './controllers/menu-items.js';
 import { getOneDayEventTemplate, updateOneDayEventTemplate } from './controllers/one-day-event-template.js';
 import { createRoomType, listRoomTypes, updateRoomType } from './controllers/room-types.js';
-import { createUser, listEventManagers, listUsers, updateUser } from './controllers/users.js';
+import { createUser, deleteUser, listEventManagers, listUsers, updateUser } from './controllers/users.js';
 import { createVenue, listVenues, updateVenue } from './controllers/venues.js';
 import { authenticate, requireRole } from './middleware/auth.js';
 import { Role } from './models/user.js';
@@ -56,6 +56,10 @@ export const router = server.router(contract, {
   updateUser: {
     middleware: eventManagerOnly,
     handler: updateUser,
+  },
+  deleteUser: {
+    middleware: eventManagerOnly,
+    handler: deleteUser,
   },
   listEventManagers: {
     middleware: authenticatedOnly,

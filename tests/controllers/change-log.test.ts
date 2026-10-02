@@ -152,3 +152,38 @@ describe('GET /change-log', () => {
     expect(response.body[0].timestamp).toEqual(expect.any(String));
   });
 });
+
+describe('GET /change-log — actor names (DEV-13)', () => {
+  it('names each actor, including a soft-deleted one hidden from GET /users', async () => {
+    const token = await seedCaller();
+    const deleted = await User.create({
+      name: 'Kiran More',
+      username: 'kiran',
+      passwordHash: 'not-used-in-these-tests',
+      role: Role.Housekeeping,
+      active: false,
+      deletedAt: new Date(),
+    });
+    await logChange({
+      entityType: 'Event',
+      entityId: 'event-1',
+      field: 'status',
+      newValue: 'Confirmed',
+      changedByUserId: deleted.id,
+    });
+    await logChange({
+      entityType: 'Event',
+      entityId: 'event-1',
+      field: 'pax',
+      newValue: 10,
+      changedByUserId: 'not-a-user',
+    });
+
+    const response = await listChangeLogAs(token, 'Event', 'event-1');
+
+    expect(response.body.map((entry: { changedByName: string | null }) => entry.changedByName).sort()).toEqual([
+      'Kiran More',
+      null,
+    ]);
+  });
+});
