@@ -196,7 +196,7 @@ export const quotationSummaryResultSchema = z.object({
 // Session without touching setup at all yet) and every field within it is
 // optional too — a caller sends only what it's chosen so far, the rest fall
 // back to sessionSetupSchema's own field-level defaults (STORY-026).
-const sessionSetupInputSchema = z.object({
+export const sessionSetupInputSchema = z.object({
   seating: z.nativeEnum(SeatingArrangement).optional(),
   tableCount: z.number().min(0).optional(),
   chairCount: z.number().min(0).optional(),

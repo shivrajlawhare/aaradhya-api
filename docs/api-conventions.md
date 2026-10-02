@@ -810,6 +810,32 @@ request shape, not which credential was wrong.
   duplicating the whole `toPublicEvent`/`toPublicSession`/`toPublicItem`
   projection chain in a second file.
 
+### GET/PUT /settings/one-day-event-template — SETTLED (DEV-11)
+
+- CR-1 D1: one organisation-wide template, the `oneDayEventTemplate`
+  collection (a singleton, enforced by a unique `key: 'default'`). It holds
+  `eventFamilyType`, `session { sessionType, venue, venueCost?, startTime,
+  endTime, pax, setup? }` (no date), `roomLines [{ roomType, noOfRooms }]`,
+  `ceremonies [{ eventName, startTime, endTime }]`, `meals [{ mealName,
+  startTime, endTime, pax, costPerPlate, limitedSeating, menuItems }]`,
+  `lineItems [{ name, note?, amount }]` and `gstPercent`. Times are 24-hour
+  `HH:mm`.
+- Both routes are `requireRole(Role.EventManager)` — the template carries
+  prices, and only the Event Manager uses Settings and the wizard.
+- **GET seeds on first read** (`services/one-day-event-template.ts`) with
+  example 4's values, creating any of its 19 Menu Items the master is
+  missing (case-insensitive find-or-create). `npm run seed:config` calls the
+  same function, so it never overwrites an edited template. Meals' menu
+  items come back as `{ id, name }`; an unset venue cost / setup / note is
+  `null`.
+- Room occupancy and tariff, and an unset venue cost, are deliberately not
+  stored: the web client reads them from the masters when it applies the
+  template, so a master edit reaches the next prefill.
+- **PUT replaces the whole template** (400 `MENU_ITEM_NOT_FOUND` if a meal
+  references an unknown Menu Item). One Change Log entry per changed
+  section (`entityType: 'OneDayEventTemplate'`, `field` = the section name),
+  sharing one `groupId`. Events already created are never touched.
+
 ### No brute-force protection in v1 — SETTLED (STORY-002)
 
 No login rate-limiting or account lockout. Deliberate: ~15 internal, trusted users

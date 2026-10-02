@@ -14,6 +14,7 @@ import { connectToDatabase } from '../src/db.js';
 import { renameDormitoryToFamilyRoom } from '../src/migrations/rename-dormitory-room-type.js';
 import { RoomType } from '../src/models/room-type.js';
 import { Venue } from '../src/models/venue.js';
+import { getOrSeedOneDayEventTemplate } from '../src/services/one-day-event-template.js';
 
 // Poolside/Half Banquet/Full Banquet costs are this story's own AC values,
 // taken from the reference quotations. "Lawn" isn't named in those
@@ -67,7 +68,12 @@ const seedConfig = async (): Promise<void> => {
     );
   }
 
-  console.log(`[seed] ready — ${VENUES.length} venues, ${ROOM_TYPES.length} room types`);
+  // DEV-11 (D1): the One Day Event template, with example 4's values and
+  // any of its Menu Items the master is missing. An existing (possibly
+  // edited) template is left as it is.
+  await getOrSeedOneDayEventTemplate();
+
+  console.log(`[seed] ready — ${VENUES.length} venues, ${ROOM_TYPES.length} room types, One Day Event template`);
   process.exit(0);
 };
 

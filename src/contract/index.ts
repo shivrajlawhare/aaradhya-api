@@ -45,6 +45,10 @@ import {
   updateMenuItemBodySchema,
 } from './schemas/menu-item.js';
 import {
+  oneDayEventTemplateResultSchema,
+  updateOneDayEventTemplateBodySchema,
+} from './schemas/one-day-event-template.js';
+import {
   createRoomTypeBodySchema,
   roomTypeIdParamsSchema,
   roomTypeResultSchema,
@@ -502,5 +506,23 @@ export const contract = c.router({
       409: apiErrorSchema,
     },
     summary: 'Edit name/default tariff and/or toggle active on a Room Type (Event Manager only)',
+  },
+  getOneDayEventTemplate: {
+    method: 'GET',
+    path: '/settings/one-day-event-template',
+    responses: {
+      200: oneDayEventTemplateResultSchema,
+    },
+    summary: 'Read the One Day Event template, seeding it on first read (Event Manager only)',
+  },
+  updateOneDayEventTemplate: {
+    method: 'PUT',
+    path: '/settings/one-day-event-template',
+    body: updateOneDayEventTemplateBodySchema,
+    responses: {
+      200: oneDayEventTemplateResultSchema,
+      400: apiErrorSchema,
+    },
+    summary: 'Replace the One Day Event template (Event Manager only)',
   },
 });

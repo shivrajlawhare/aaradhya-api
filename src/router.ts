@@ -27,6 +27,7 @@ import {
 } from './controllers/events.js';
 import { checkHealth } from './controllers/health.js';
 import { createMenuItem, listMenuItems, updateMenuItem } from './controllers/menu-items.js';
+import { getOneDayEventTemplate, updateOneDayEventTemplate } from './controllers/one-day-event-template.js';
 import { createRoomType, listRoomTypes, updateRoomType } from './controllers/room-types.js';
 import { createUser, listEventManagers, listUsers, updateUser } from './controllers/users.js';
 import { createVenue, listVenues, updateVenue } from './controllers/venues.js';
@@ -190,5 +191,13 @@ export const router = server.router(contract, {
   updateRoomType: {
     middleware: eventManagerOnly,
     handler: updateRoomType,
+  },
+  getOneDayEventTemplate: {
+    middleware: eventManagerOnly,
+    handler: getOneDayEventTemplate,
+  },
+  updateOneDayEventTemplate: {
+    middleware: eventManagerOnly,
+    handler: updateOneDayEventTemplate,
   },
 });
