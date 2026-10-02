@@ -98,6 +98,7 @@ Event Manager visibility only (SRS §4.4, §6.2).
 | `pax` | Number | Yes | SRS §4.2. |
 | `session_status` | String (enum: `Active`\|`Cancelled`) | Yes, default `Active` | Amendment §1 — independent of the parent Event's `status`. |
 | `setup` | Setup (§1.1.5.1) | Yes | SRS §4.2. |
+| `department_notes` | DepartmentNotes (§1.1.5.3) | Yes, default empty | CR-1 D4 (DEV-12) — what the Banquet Event Order prints for the kitchen / maintenance / restaurant. |
 | `items` | [Item] (§1.1.5.2) | Yes, may be empty array | SRS §4.2. |
 
 **Not fields here:** `duration_days`, `is_multi_day`. The amendment states these explicitly as derived, not stored — computed on read, never persisted (Amendment §1, STORY-026).
@@ -106,7 +107,7 @@ Event Manager visibility only (SRS §4.4, §6.2).
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `seating_arrangement` | String (enum: `Theatre`\|`Round tables`\|`Classroom`\|`U-shape`\|`Cluster`\|`Other`) | Yes | SRS §4.2. |
+| `seating_arrangement` | String (enum: `Theatre`\|`RoundTables`\|`SquareTables`\|`Classroom`\|`UShape`\|`Cluster`\|`Other`) | No | SRS §4.2. `SquareTables` added in DEV-12 (the reference BEO's "Square Table Setup"). |
 | `table_count` | Number | No | SRS §4.2. |
 | `chair_count` | Number | No | SRS §4.2. |
 | `stage_required` | Boolean | Yes, default `false` | SRS §4.2. |
@@ -132,6 +133,19 @@ Event Manager visibility only (SRS §4.4, §6.2).
 | `menu_items` | [ObjectId, ref `menu_items`] | No, may be empty | Meal | SRS §4.5. |
 | `venue` | String (prefilled) | Yes if `type=Event` | Event | SRS §4.5. |
 
+##### 1.1.5.3 Department Notes — embedded in `events.sessions[].department_notes`
+
+CR-1 D4 (DEV-12). No money, so every role sees it; printed on the session's Banquet Event Order page.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `veg_pax` | Number (whole, ≥ 0) | No | "Veg – N pax" on the Kitchen/Menu box. The UI warns (never blocks) when Veg + Non-Veg ≠ `pax`. |
+| `non_veg_pax` | Number (whole, ≥ 0) | No | "Non-Veg – N pax". |
+| `maintenance` | [String] | Yes, default `[]` | The Maintainance box (e.g. "Sound System"). |
+| `restaurant_note` | String | No | The Restaurant box. |
+
+A change is one Change Log entry, `sessions[<type>].departmentNotes` (whole object, like `setup`).
+
 #### 1.1.6 Document Checklist Item — embedded in `events.documents_checklist[]`
 
 Fixed 6-item set, server-defined — no item can be added or removed via the API (SRS §4.8, STORY-024).
@@ -155,6 +169,7 @@ SRS §4.9. One document per User Account.
 | `password_hash` | String | Yes | SRS §4.9; never returned in any API response (STORY-002/005/006). |
 | `role` | String (enum: `EventManager`\|`FnBHead`\|`Housekeeping`\|`Reception`) | Yes | SRS §3, §4.9. |
 | `active` | Boolean | Yes, default `true` | SRS §4.9. |
+| `deleted_at` | Date | No | CR-1 D15 (DEV-13) soft delete, F&B Head / Housekeeping / Reception only. Set with `active: false` by `DELETE /users/:id`; a deleted account is hidden from `GET /users`, can't be patched, can't log in, and its tokens stop working. The document stays so Activity keeps the name; its username stays taken. |
 
 ### 1.3 `menu_items`
 
@@ -178,6 +193,20 @@ The Room Type master list (SRS §4.6/§5.8; Settings → Room Types).
 | `occupancy` | Number (whole, ≥ 0) | Yes (records saved before DEV-07 read 0) | Guests per room: Delux 2, Executive 3, Family Room 6, Extra Beds 0. Snapshotted onto Event room lines at save time. DEV-07. |
 | `default_tariff` | Number | Yes | Prefills a room line's tariff (Delux 2800, Executive 3800, Family Room 6000, Extra Beds 700). |
 | `active` | Boolean | Yes, default true | Inactive entries stay for historical Events. |
+
+### 1.3b `one_day_event_template`
+
+CR-1 D1 (DEV-11) — a singleton (unique `key: 'default'`), the Settings → One Day Event template the New Event wizard prefills from. Seeded with `example_quatation_4.pdf`'s values on first read (and by `npm run seed:config`, which never overwrites an edited template).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `event_family_type` | String | Yes | e.g. Wedding. |
+| `session` | { `session_type`, `venue`, `venue_cost`?, `start_time`, `end_time`, `pax`, `setup`? } | Yes | No date — chosen when applied. An unset `venue_cost` comes from the Venues master at apply time. Times are `HH:mm`. |
+| `room_lines` | [{ `room_type`, `no_of_rooms` }] | Yes | Occupancy and tariff come from the Room Types master at apply time (D8: Delux 14 · Executive 2 · Family Room 2 · Extra Beds 0; check-in/out left empty). |
+| `ceremonies` | [{ `event_name`, `start_time`, `end_time` }] | Yes | e.g. Muhurta. |
+| `meals` | [{ `meal_name`, `start_time`, `end_time`, `pax`, `cost_per_plate`, `limited_seating`, `menu_items`: [ObjectId] }] | Yes | Menu items reference `menu_items`; the API returns them as `{ id, name }`. |
+| `line_items` | [{ `name`, `note`?, `amount` }] | Yes | Become the wizard's Review line items. |
+| `gst_percent` | Number (0–100) | Yes | Food GST %. |
 
 ### 1.4 `change_log_entries`
 
@@ -204,8 +233,9 @@ SRS §4.10, implemented as its own collection per STORY-008 (see the note under 
 | POST | `/users` | Create a User Account (EventManager-only) | STORY-005 |
 | GET | `/users` | List all User Accounts (EventManager-only) | STORY-006 |
 | GET | `/event-managers` | `{id, name}` of every Event Manager account, active or not (any authenticated caller) — how clients resolve an Event's `event_manager` id to a name | STORY-037, DEV-05 |
-| PATCH | `/users/:id` | Deactivate a User Account or change its role (EventManager-only) | STORY-006 |
-| GET | `/change-log` | List Change Log Entries for one entity (`?entityType=&entityId=`), EventManager-only | STORY-009 |
+| PATCH | `/users/:id` | Deactivate a User Account or change its role (EventManager-only); 404 for a deleted account | STORY-006, DEV-13 |
+| DELETE | `/users/:id` | Soft-delete a User Account (EventManager-only): never an Event Manager (400 "Event Managers can't be deleted.") or yourself; logs a `User` change | DEV-13 |
+| GET | `/change-log` | List Change Log Entries for one entity (`?entityType=&entityId=`), EventManager-only. Each entry carries `changedByName`, resolved from every user including soft-deleted ones | STORY-009, DEV-13 |
 | POST | `/events` | Create an Event (family type, manager, ≥1 Client Contact) | STORY-012 |
 | GET | `/events` | List Events | STORY-013 |
 | GET | `/events/:id` | Get one Event; response fields filtered by caller's role | STORY-013, STORY-046 |
@@ -227,6 +257,10 @@ SRS §4.10, implemented as its own collection per STORY-008 (see the note under 
 | GET | `/events/:id/quotation-summary` | Live Total Cost Summary rollup — not a stored entity. Accommodation is reported as `accommodationTaxable` (the Final Amount), `accommodationGst` (5%) and `accommodationTotal` (their sum) | STORY-041, DEV-07 |
 | GET | `/events/:id/quotation.pdf` | Generate and return the client-facing Quotation PDF | STORY-043 |
 | GET | `/dashboard` | Aggregate counts + upcoming-events list, role-filtered | STORY-047 |
+| GET | `/events/:id/banquet-event-order` | The Notes for Department / Banquet Event Order data (any authenticated role): client name (D7) and, per Active session, dates, times, pax, venue, type, meals with menu item names, ceremonies, setup and department notes — **no prices** | DEV-12 |
+| GET | `/events/:id/banquet-event-order.pdf` | The BEO PDF (any authenticated role), rendered from the web route via `browser-pdf.ts`; `<eventId>-notes-for-department.pdf` | DEV-12 |
+| GET | `/settings/one-day-event-template` | The One Day Event template, seeded on first read (EventManager-only) | DEV-11 |
+| PUT | `/settings/one-day-event-template` | Replace the template; one Change Log entry per changed section (EventManager-only) | DEV-11 |
 
 **References stay ids.** An Event's `event_manager` is returned as the user id on every Event endpoint; clients resolve names through `GET /event-managers` (open to every role, unlike `GET /users`) and fall back to the id. Chosen in DEV-05 over adding an `eventManagerName` field, which would duplicate the name on every Event response.
 

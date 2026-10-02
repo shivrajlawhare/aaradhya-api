@@ -58,6 +58,23 @@ This isn't just an implementation detail — persisting Quotations is new v1 sco
 
 I'll update `Aaradhya_SRS_v1.1.md`, `Aaradhya_Collections_and_API.md`, `Aaradhya_Story_Backlog.md`, and `Aaradhya_Tech_Architecture.md` to reflect all of this now, per your go-ahead.
 
+## 6. As built (CR-1, 2026-10) — both PDFs, and the Banquet Event Order
+
+**Not persisted.** The persistence plan above (§3–§5) was not adopted: generated PDFs are never stored (decision recorded when STORY-074 was skipped). Every request renders fresh from live data and is returned with `Cache-Control: no-store`; nothing is written to R2 or a `quotations` collection.
+
+**One mechanism for both documents** (`src/services/browser-pdf.ts`): Playwright opens the web app's own page with the caller's session injected into `localStorage`, waits for the network to settle, refuses to print if it was redirected to `/login`, and prints `page.pdf({ format: 'A4', printBackground: true })`. At most two Chromium renders run at once (a small semaphore). The page's `?print=1` mode renders just the paper on white — no toolbar, no panels.
+
+| | Quotation | Banquet Event Order (Notes for Department) |
+|---|---|---|
+| Endpoint | `GET /events/:id/quotation.pdf` | `GET /events/:id/banquet-event-order.pdf` (DEV-12) |
+| Who | Event Manager only | Every authenticated role |
+| Web route rendered | `/events/:id/quotation-preview?print=1` | `/events/:id/notes-for-department?print=1` |
+| Data | `GET /events/:id` + `quotation-summary` | `GET /events/:id/banquet-event-order` — built field by field, **no prices** |
+| Layout | `quotation-document.tsx`, reproduces `example_quatation_3.pdf` | `banquet-event-order-document.tsx`, reproduces `notes_for_department.pdf`: one A4 page per Active session (`page-break-after`), details table, Kitchen/Menu, House Keeping / Maintainance / Restaurant (empty boxes omitted) |
+| File name | `<eventId>-quotation.pdf` (client) | `<eventId>-notes-for-department.pdf` (`Content-Disposition` + client) |
+
+Both documents are bound only to fixed paper colours (`PAPER_COLORS`), so they print the same in light and dark mode. DEV-12 verified the BEO by printing the real route for the reference sample and comparing the PDF text line by line.
+
 ---
 
 ## Sources
