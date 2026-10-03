@@ -22,7 +22,6 @@ import {
   eventResultSchema,
   eventSessionItemParamsSchema,
   eventSessionParamsSchema,
-  extrasResultSchema,
   filteredEventResultSchema,
   getCalendarQuerySchema,
   itemResultSchema,
@@ -33,8 +32,8 @@ import {
   updateAccommodationBodySchema,
   updateDocumentsChecklistBodySchema,
   updateEventBodySchema,
-  updateEventExtrasBodySchema,
   updateEventPaymentBodySchema,
+  updateExtraLineItemsBodySchema,
   updateItemBodySchema,
   updateSessionBodySchema,
 } from './schemas/event.js';
@@ -263,16 +262,19 @@ export const contract = c.router({
     },
     summary: "Toggle items on an Event's Documents Checklist (Event Manager only)",
   },
-  updateEventExtras: {
-    method: 'PATCH',
-    path: '/events/:id/extras',
+  // v2.2.0 (V1): replaces PATCH /events/:id/extras — the extras are the
+  // line items, and the list is replaced whole.
+  updateExtraLineItems: {
+    method: 'PUT',
+    path: '/events/:id/extra-line-items',
     pathParams: eventIdParamsSchema,
-    body: updateEventExtrasBodySchema,
+    body: updateExtraLineItemsBodySchema,
     responses: {
-      200: extrasResultSchema,
+      200: eventResultSchema,
+      400: apiErrorSchema,
       404: apiErrorSchema,
     },
-    summary: "Edit an Event's Quotation extras — Decoration/Photographer/Bhatji (Event Manager only)",
+    summary: "Replace an Event's extra line items — name, note, amount (Event Manager only)",
   },
   getQuotationSummary: {
     method: 'GET',

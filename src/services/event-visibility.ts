@@ -93,12 +93,6 @@ export interface VisibilityPayment {
   balance: number;
 }
 
-export interface VisibilityExtras {
-  decoration: number;
-  photographer: number;
-  bhatji: number;
-}
-
 export interface VisibilityManualLineItem {
   name: string;
   note: string | null;
@@ -115,9 +109,8 @@ export interface VisibilityEvent {
   accommodation?: VisibilityAccommodation;
   payment?: VisibilityPayment;
   documentsChecklist: VisibilityDocumentsChecklist;
-  extras?: VisibilityExtras;
   extraLineItems?: VisibilityManualLineItem[];
-  // STORY-072 — same money-adjacent class as extras/extraLineItems above;
+  // STORY-072 — same money-adjacent class as extraLineItems above;
   // it only ever feeds the Quotation's own Total Cost Summary, an
   // EventManager-only screen.
   foodGstRatePercent?: number;
@@ -142,14 +135,14 @@ export interface VisibilityEvent {
  * Field-visibility decisions (SRS §3.1-3.4 + this story's own AC text) —
  * documented here since neither source gives an exhaustive field list:
  * - EventManager: everything, unchanged (this story's own regression AC).
- * - Money is hidden end-to-end for every other role: `payment`, `extras`,
- *   `extraLineItems` (STORY-068's open-ended manual line items — the same
- *   class of figure as extras, hidden for the same reason),
+ * - Money is hidden end-to-end for every other role: `payment`,
+ *   `extraLineItems` (the manual line items — since v2.2.0 the only
+ *   extras),
  *   each Session's `venueCost`, each Item's `costPerPlate`/`totalCost`,
  *   and each Accommodation room line's `tariff`/`totalTaxable` plus the
  *   block's own `totalCharges`/`discountPercent`/`discountAmount`/
  *   `finalAmount` — the SRS only names the `payment` object
- *   explicitly, but `extras`/`venueCost`/room tariffs are money figures
+ *   explicitly, but line items/`venueCost`/room tariffs are money figures
  *   in the same class, and the story's own Decisions record this as a
  *   deliberate policy call, not an SRS-mandated one.
  * - `clientContacts`: F&B ("POC name/contact") and Reception ("Bride/Groom
@@ -185,7 +178,6 @@ export const filterEventForRole = (event: VisibilityEvent, role: Role): Visibili
     clientContacts: canSeeClientContacts ? event.clientContacts : undefined,
     accommodation: canSeeAccommodation && event.accommodation ? filterAccommodation(event.accommodation) : undefined,
     payment: undefined,
-    extras: undefined,
     extraLineItems: undefined,
     foodGstRatePercent: undefined,
     sessions: event.sessions.map((session) => filterSession(session, { canSeeSetup, canSeeMenu })),

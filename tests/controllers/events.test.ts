@@ -75,8 +75,8 @@ const patchPaymentAs = (token: string, id: string, body: object) =>
 const patchDocumentsChecklistAs = (token: string, id: string, body: object) =>
   request(app).patch(`/events/${id}/documents`).set('Authorization', `Bearer ${token}`).send(body);
 
-const patchExtrasAs = (token: string, id: string, body: object) =>
-  request(app).patch(`/events/${id}/extras`).set('Authorization', `Bearer ${token}`).send(body);
+const putExtraLineItemsAs = (token: string, id: string, body: object) =>
+  request(app).put(`/events/${id}/extra-line-items`).set('Authorization', `Bearer ${token}`).send(body);
 
 const getQuotationSummaryAs = (token: string, id: string) =>
   request(app).get(`/events/${id}/quotation-summary`).set('Authorization', `Bearer ${token}`);
@@ -433,14 +433,13 @@ describe('POST /events', () => {
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
   });
 
-  it('creates extraLineItems (open-ended manual line items, FR-QUO-9a) alongside the fixed extras fields', async () => {
+  it('creates extraLineItems (open-ended manual line items, FR-QUO-9a) — the only extras since v2.2.0', async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
 
     const response = await createEventAs(
       token,
       validPayload(manager.id, {
-        extras: { decoration: 15000 },
         extraLineItems: [
           { name: 'Photographer', note: 'wedding', amount: 25000 },
           { name: 'Mehendi Artist', amount: 8000 },
@@ -449,7 +448,7 @@ describe('POST /events', () => {
     );
 
     expect(response.status).toBe(201);
-    expect(response.body.extras.decoration).toBe(15000);
+    expect(response.body).not.toHaveProperty('extras');
     expect(response.body.extraLineItems).toEqual([
       { name: 'Photographer', note: 'wedding', amount: 25000 },
       { name: 'Mehendi Artist', note: null, amount: 8000 },
@@ -836,25 +835,26 @@ describe('GET /events/:id', () => {
     });
   });
 
-  it('includes extras, defaulting to 0 for a freshly created Event', async () => {
+  it('includes extraLineItems, defaulting to an empty list — and no legacy extras', async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
     const created = await createEventAs(token, validPayload(manager.id));
 
     const response = await getEventAs(token, created.body.id);
 
-    expect(response.body.extras).toEqual({ decoration: 0, photographer: 0, bhatji: 0 });
+    expect(response.body.extraLineItems).toEqual([]);
+    expect(response.body).not.toHaveProperty('extras');
   });
 
-  it('reflects a prior PATCH /events/:id/extras edit', async () => {
+  it('reflects a prior PUT /events/:id/extra-line-items edit', async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
     const created = await createEventAs(token, validPayload(manager.id));
-    await patchExtrasAs(token, created.body.id, { decoration: 15000 });
+    await putExtraLineItemsAs(token, created.body.id, { extraLineItems: [{ name: 'Decoration', amount: 15000 }] });
 
     const response = await getEventAs(token, created.body.id);
 
-    expect(response.body.extras).toEqual({ decoration: 15000, photographer: 0, bhatji: 0 });
+    expect(response.body.extraLineItems).toEqual([{ name: 'Decoration', note: null, amount: 15000 }]);
   });
 
   it('includes sessions, defaulting to an empty array for a freshly created Event', async () => {
@@ -956,7 +956,7 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
       roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 1 }],
     });
     await patchPaymentAs(managerToken, eventId, { totalEstimatedAmount: 50000 });
-    await patchExtrasAs(managerToken, eventId, { decoration: 1000 });
+    await putExtraLineItemsAs(managerToken, eventId, { extraLineItems: [{ name: 'Decoration', amount: 1000 }] });
     return { eventId, managerToken };
   };
 
@@ -975,7 +975,7 @@ describe('GET /events/:id — role-based field filtering (STORY-046)', () => {
     expect(response.status).toBe(200);
     expect(response.body.clientContacts).toHaveLength(1);
     expect(response.body.payment.totalEstimatedAmount).toBe(50000);
-    expect(response.body.extras.decoration).toBe(1000);
+    expect(response.body.extraLineItems).toEqual([{ name: 'Decoration', note: null, amount: 1000 }]);
     // No check_in/check_out set — nights fall back to 1. 5000 × 1 room ×
     // 1 night = 5000 (no GST on the line, DEV-07).
     expect(response.body.accommodation.totalCharges).toBe(5000);
@@ -1904,13 +1904,18 @@ describe('PATCH /events/:id/documents', () => {
   });
 });
 
-describe('PATCH /events/:id/extras', () => {
+describe('PUT /events/:id/extra-line-items (v2.2.0, V1)', () => {
+  const DECORATION = { name: 'Decoration', note: 'Mandap + stage florals', amount: 115000 };
+  const BHATJI = { name: 'Bhatji', note: 'wedding + punyawachan', amount: 7000 };
+
   it('returns 401 with no token', async () => {
     const { token: creatorToken } = await seedCaller();
     const manager = await seedEventManager();
     const created = await createEventAs(creatorToken, validPayload(manager.id));
 
-    const response = await request(app).patch(`/events/${created.body.id}/extras`).send({ decoration: 5000 });
+    const response = await request(app)
+      .put(`/events/${created.body.id}/extra-line-items`)
+      .send({ extraLineItems: [DECORATION] });
 
     expect(response.status).toBe(401);
   });
@@ -1921,7 +1926,7 @@ describe('PATCH /events/:id/extras', () => {
     const created = await createEventAs(creatorToken, validPayload(manager.id));
     const { token } = await seedCaller(role);
 
-    const response = await patchExtrasAs(token, created.body.id, { decoration: 5000 });
+    const response = await putExtraLineItemsAs(token, created.body.id, { extraLineItems: [DECORATION] });
 
     expect(response.status).toBe(403);
   });
@@ -1929,7 +1934,7 @@ describe('PATCH /events/:id/extras', () => {
   it('returns 404 for a well-formed but nonexistent id', async () => {
     const { token } = await seedCaller();
 
-    const response = await patchExtrasAs(token, '507f1f77bcf86cd799439011', { decoration: 5000 });
+    const response = await putExtraLineItemsAs(token, '507f1f77bcf86cd799439011', { extraLineItems: [] });
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({
@@ -1937,104 +1942,91 @@ describe('PATCH /events/:id/extras', () => {
     });
   });
 
-  it('returns 400 for a malformed id', async () => {
-    const { token } = await seedCaller();
-
-    const response = await patchExtrasAs(token, 'not-an-id', { decoration: 5000 });
-
-    expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('VALIDATION_ERROR');
-  });
-
-  it('reads all three amounts as 0 for a brand-new Event with no extras entered yet', async () => {
+  it('replaces the whole list and returns the updated Event', async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
-    const created = await createEventAs(token, validPayload(manager.id));
+    const created = await createEventAs(
+      token,
+      validPayload(manager.id, { extraLineItems: [{ name: 'Photographer', amount: 60000 }] })
+    );
 
-    // An empty-body PATCH takes the changes.length === 0 path, returning
-    // the current (untouched) state.
-    const response = await patchExtrasAs(token, created.body.id, {});
+    const response = await putExtraLineItemsAs(token, created.body.id, { extraLineItems: [DECORATION, BHATJI] });
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ decoration: 0, photographer: 0, bhatji: 0 });
+    expect(response.body.id).toBe(created.body.id);
+    expect(response.body.extraLineItems).toEqual([DECORATION, BHATJI]);
+    const stored = await Event.findById(created.body.id);
+    expect(stored?.extraLineItems.map((item) => item.name)).toEqual(['Decoration', 'Bhatji']);
   });
 
-  it('sets a plain numeric amount with no computation applied to it', async () => {
+  it('clears the list with an empty array', async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
-    const created = await createEventAs(token, validPayload(manager.id));
+    const created = await createEventAs(token, validPayload(manager.id, { extraLineItems: [DECORATION] }));
 
-    const response = await patchExtrasAs(token, created.body.id, {
-      decoration: 15000,
-      photographer: 20000,
-      bhatji: 5000,
-    });
+    const response = await putExtraLineItemsAs(token, created.body.id, { extraLineItems: [] });
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ decoration: 15000, photographer: 20000, bhatji: 5000 });
+    expect(response.body.extraLineItems).toEqual([]);
   });
 
-  it('rejects a key outside the fixed decoration/photographer/bhatji list as 400', async () => {
+  it.each([
+    ['a blank name', { extraLineItems: [{ name: '  ', amount: 100 }] }],
+    ['a negative amount', { extraLineItems: [{ name: 'Decoration', amount: -1 }] }],
+    ['a missing amount', { extraLineItems: [{ name: 'Decoration' }] }],
+    ['an unknown key', { extraLineItems: [], decoration: 1000 }],
+    ['no list at all', {}],
+  ])('rejects %s as 400, like the create-time schema', async (_label, body) => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
     const created = await createEventAs(token, validPayload(manager.id));
 
-    const response = await patchExtrasAs(token, created.body.id, { catering: 1000 });
+    const response = await putExtraLineItemsAs(token, created.body.id, body);
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
   });
 
-  it('rejects a negative amount as 400 — these are costs, not adjustments', async () => {
-    const { token } = await seedCaller();
-    const manager = await seedEventManager();
-    const created = await createEventAs(token, validPayload(manager.id));
-
-    const response = await patchExtrasAs(token, created.body.id, { decoration: -1 });
-
-    expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('VALIDATION_ERROR');
-  });
-
-  it('writes one Change Log Entry per changed field', async () => {
+  it('writes one extraLineItems Change Log Entry with the old and new lists and a groupId', async () => {
     const { caller, token } = await seedCaller();
     const manager = await seedEventManager();
-    const created = await createEventAs(token, validPayload(manager.id));
+    const created = await createEventAs(token, validPayload(manager.id, { extraLineItems: [DECORATION] }));
 
-    const response = await patchExtrasAs(token, created.body.id, { decoration: 15000, bhatji: 5000 });
+    await putExtraLineItemsAs(token, created.body.id, { extraLineItems: [DECORATION, BHATJI] });
 
-    expect(response.status).toBe(200);
     const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
-    expect(entries.map((entry) => entry.field).sort()).toEqual(['bhatji', 'decoration']);
-    for (const entry of entries) {
-      expect(entry.changedBy).toBe(caller.id);
-      expect(entry.oldValue).toBe(0);
-    }
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      field: 'extraLineItems',
+      oldValue: [DECORATION],
+      newValue: [DECORATION, BHATJI],
+      changedBy: caller.id,
+    });
+    expect(entries[0]!.groupId).toEqual(expect.any(String));
   });
 
-  it('writes no Change Log Entry for a PATCH that resubmits the same value', async () => {
+  it('writes no Change Log Entry when the list is unchanged', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(token, validPayload(manager.id, { extraLineItems: [DECORATION] }));
+
+    const response = await putExtraLineItemsAs(token, created.body.id, { extraLineItems: [DECORATION] });
+
+    expect(response.status).toBe(200);
+    expect(await ChangeLogEntry.countDocuments({ entityType: 'Event', entityId: created.body.id })).toBe(0);
+  });
+
+  it('no longer serves PATCH /events/:id/extras', async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
     const created = await createEventAs(token, validPayload(manager.id));
-    await patchExtrasAs(token, created.body.id, { decoration: 15000 });
 
-    const response = await patchExtrasAs(token, created.body.id, { decoration: 15000 });
+    const response = await request(app)
+      .patch(`/events/${created.body.id}/extras`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ decoration: 1000 });
 
-    expect(response.status).toBe(200);
-    const entries = await ChangeLogEntry.find({ entityType: 'Event', entityId: created.body.id });
-    expect(entries).toHaveLength(1); // only the first PATCH's entry, not a second
-  });
-
-  it('leaves other extras fields untouched when only one field is submitted', async () => {
-    const { token } = await seedCaller();
-    const manager = await seedEventManager();
-    const created = await createEventAs(token, validPayload(manager.id));
-    await patchExtrasAs(token, created.body.id, { decoration: 15000, photographer: 20000 });
-
-    const response = await patchExtrasAs(token, created.body.id, { bhatji: 5000 });
-
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ decoration: 15000, photographer: 20000, bhatji: 5000 });
+    expect(response.status).toBe(404);
   });
 });
 
@@ -2107,7 +2099,7 @@ describe('GET /events/:id/quotation-summary', () => {
     });
   });
 
-  it('combines live session/item/accommodation/extras data into the exact expected rollup', async () => {
+  it('combines live session/item/accommodation/line-item data into the exact expected rollup', async () => {
     const { token } = await seedCaller();
     const manager = await seedEventManager();
     const created = await createEventAs(token, validPayload(manager.id));
@@ -2131,7 +2123,13 @@ describe('GET /events/:id/quotation-summary', () => {
       roomLines: [{ roomType: 'Double', occupancy: 2, tariff: 5000, noOfRooms: 2 }],
     });
 
-    await patchExtrasAs(token, eventId, { decoration: 1000, photographer: 1500, bhatji: 500 });
+    await putExtraLineItemsAs(token, eventId, {
+      extraLineItems: [
+        { name: 'Decoration', amount: 1000 },
+        { name: 'Photographer', amount: 1500 },
+        { name: 'Bhatji', amount: 500 },
+      ],
+    });
 
     const response = await getQuotationSummaryAs(token, eventId);
 
@@ -2152,6 +2150,24 @@ describe('GET /events/:id/quotation-summary', () => {
       extrasTotal: 3000,
       grandTotal: 25385,
     });
+  });
+
+  it('ignores legacy fixed extras still stored on an Event (V1: line items only)', async () => {
+    const { token } = await seedCaller();
+    const manager = await seedEventManager();
+    const created = await createEventAs(
+      token,
+      validPayload(manager.id, { extraLineItems: [{ name: 'Decoration', amount: 1000 }] })
+    );
+    await Event.updateOne(
+      { _id: created.body.id },
+      { $set: { 'extras.decoration': 50000, 'extras.photographer': 20000, 'extras.bhatji': 5000 } }
+    );
+
+    const response = await getQuotationSummaryAs(token, created.body.id);
+
+    expect(response.body.extrasTotal).toBe(1000);
+    expect(response.body.grandTotal).toBe(1000);
   });
 
   // STORY-072 — a per-Event foodGstRatePercent (SRS §4.9's "editable...

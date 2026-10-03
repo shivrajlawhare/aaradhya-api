@@ -34,6 +34,7 @@ credential (see `docs/api-conventions.md`).
 | `npm test` | Vitest — `tests/**/*.test.ts` |
 | `npm run seed:config` | Seed the Venue and Room Type master lists (safe to re-run) |
 | `npm run migrate:dev07` | One-off DEV-07 migration: Dormitory → Family Room (see below) |
+| `npm run migrate:v220` | One-off v2.2.0 migration: fixed extras → extra line items (see below) |
 
 ## Migrations
 
@@ -44,6 +45,7 @@ idempotent.
 | Migration | Run | What it does |
 |---|---|---|
 | DEV-07 `rename-dormitory-room-type.ts` | `npm run migrate:dev07` (also run by `seed:config`) | Renames the "Dormitory" Room Type to "Family Room" (occupancy 6 if it had none yet) and every Event room line whose `roomType` is "Dormitory". If an active "Family Room" already exists, an active "Dormitory" is deactivated instead. |
+| DEV-20 (v2.2.0) `convert-legacy-extras.ts` | `npm run migrate:v220` — **run once per environment when deploying v2.2.0** | For every Event, each non-zero fixed extra (`decoration` / `photographer` / `bhatji`) becomes an extra line item named "Decoration" / "Photographer" / "Bhatji" (amount, no note), appended after the existing line items; then the fixed extras are reset to 0. The API no longer reads the fixed extras, so until this runs their amounts are missing from totals and quotations. |
 
 Other DEV-07 data changes need no backfill: Room Types gained `occupancy`
 (older records read 0 until Settings or `seed:config` sets it), and

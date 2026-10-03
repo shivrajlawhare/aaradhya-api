@@ -91,11 +91,10 @@ export interface ExtrasAttributes {
 // items (Decoration/Photographer/Bhatji are just examples now, not a fixed
 // set), each with an optional short free-text note (e.g. "poolside
 // engagement sangeet + wedding mandap decor" — both reference quotations
-// carry exactly this kind of note under Decoration/Bhatji). Additive
-// alongside the existing decoration/photographer/bhatji fields on
-// ExtrasAttributes above, not a replacement — computeTotalCostSummary
-// (services/quotation.ts) sums both into the same extrasTotal, so nothing
-// that already reads extrasTotal needs to change to pick these up.
+// carry exactly this kind of note under Decoration/Bhatji). Since v2.2.0
+// (UI Redesign V1) these are the only extras: computeTotalCostSummary
+// (services/quotation.ts) sums them into extrasTotal, and the fixed
+// ExtrasAttributes fields are no longer read.
 export interface ManualLineItemAttributes {
   name: string;
   note?: string;
@@ -271,12 +270,15 @@ export interface EventAttributes {
   accommodation?: AccommodationAttributes;
   payment: PaymentAttributes;
   documentsChecklist: DocumentsChecklistAttributes;
+  // Legacy (v2.2.0, V1): kept in the model for one release, read only by
+  // the migrate:v220 migration, which turns non-zero amounts into line items
+  // and zeroes these. Not exposed by the API and not counted anywhere.
   extras: ExtrasAttributes;
   // SRS FR-QUO-9a / A13 — see ManualLineItemAttributes above. A plain array
   // (not a DocumentArray) since nothing needs a manual line item's own
-  // generated sub-id back out yet — this story never edits/deletes one
-  // individually, only ever whole-array-replaces the list at creation time,
-  // the same "no id exposed" precedent roomLines already established.
+  // generated sub-id back out — PUT /events/:id/extra-line-items always
+  // replaces the whole list, the same "no id exposed" precedent roomLines
+  // already established.
   extraLineItems: ManualLineItemAttributes[];
   // STORY-072 — the Food Cost row's own GST rate for THIS Event's Total
   // Cost Summary, defaulting to services/quotation.ts's own
@@ -535,8 +537,7 @@ const eventSchema = new Schema<EventAttributes>(
     // Always instantiated, same reasoning as payment above — a brand-new
     // Event reads every checklist item as false, never null/error.
     documentsChecklist: { type: documentsChecklistSchema, required: true, default: () => ({}) },
-    // Always instantiated, same reasoning as payment/documentsChecklist
-    // above — a brand-new Event reads decoration/photographer/bhatji as 0.
+    // Legacy, see EventAttributes.extras — new Events get all zeros.
     extras: { type: extrasSchema, required: true, default: () => ({}) },
     // Zero or more, same "no create-time minimum" reasoning clientContacts/
     // sessions already document — a brand-new Event may have no manual line

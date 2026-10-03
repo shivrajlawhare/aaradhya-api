@@ -135,35 +135,13 @@ export const paymentResultSchema = z.object({
   balance: z.number(),
 });
 
-// One numeric field per fixed key, hand-written — same "fixed, closed set
-// of named keys" shape documentsChecklistFieldsSchema above already
-// established for STORY-024, reused here since extras (Decoration/
-// Photographer/Bhatji, SRS §5.4 FR-QUO-2) is the same kind of small,
-// non-extensible field set. `.strict()` reuses that same "unknown key ->
-// 400" outcome, for the same reason: a caller mistyping a key should get a
-// rejection, not a silently-stripped no-op. min(0) rejects a negative
-// amount (this story's own edge case — "these are costs, not adjustments").
-const extrasFieldsSchema = z.object({
-  decoration: z.number().min(0).optional(),
-  photographer: z.number().min(0).optional(),
-  bhatji: z.number().min(0).optional(),
-});
-
-export const updateEventExtrasBodySchema = extrasFieldsSchema.strict();
-
-// .required() strips the .optional() every input field carries — every
-// Event always has all three amounts (defaulted to 0), same "always
-// instantiated" convention payment/documentsChecklist already use.
-export const extrasResultSchema = extrasFieldsSchema.required();
-
 // SRS FR-QUO-9a / Assumption A13 — an open-ended manual line item for the
-// Total Cost Summary (name + optional short note + amount), additive
-// alongside decoration/photographer/bhatji above, not a replacement (both
-// feed the same extrasTotal — see aaradhya-api's services/quotation.ts).
-// No `id` on the result shape — same "whole-array-replace, no per-row edit
-// endpoint" precedent roomLineResultSchema already established; this story
-// never edits or deletes one individually, only ever submits the full list
-// once at Event creation.
+// Total Cost Summary (name + optional short note + amount). Since v2.2.0
+// (UI Redesign V1) these are the only extras: the old fixed Decoration /
+// Photographer / Bhatji fields were migrated into line items
+// (scripts/migrate-v220-extras.ts). No `id` on the result shape — the list
+// is always replaced whole (PUT /events/:id/extra-line-items). min(0)
+// rejects a negative amount ("these are costs, not adjustments").
 const manualLineItemFieldsSchema = z.object({
   name: z.string().trim().min(1),
   note: z.string().trim().min(1).optional(),
@@ -175,6 +153,14 @@ export const manualLineItemResultSchema = z.object({
   note: z.string().nullable(),
   amount: z.number(),
 });
+
+// V1 — the whole list, replaced in one call (add / edit / remove all send
+// it). `.strict()`: a mistyped key is a 400, not a silent no-op.
+export const updateExtraLineItemsBodySchema = z
+  .object({
+    extraLineItems: z.array(manualLineItemFieldsSchema),
+  })
+  .strict();
 
 // The exact 6 fields src/services/quotation.ts' computeTotalCostSummary
 // produces (STORY-039) — this schema doesn't redeclare that shape, it just
@@ -387,7 +373,6 @@ export const createEventBodySchema = z.object({
   // Reuses updateAccommodationBodySchema wholesale — identical shape,
   // same "every field optional, no time component" limitation.
   accommodation: updateAccommodationBodySchema.optional(),
-  extras: extrasFieldsSchema.optional(),
   extraLineItems: z.array(manualLineItemFieldsSchema).optional(),
   // STORY-072 — defaults to 5 (services/quotation.ts's own
   // FOOD_GST_RATE_PERCENT) when omitted, via the Mongoose schema's own
@@ -490,14 +475,8 @@ export const eventResultSchema = z.object({
   accommodation: accommodationResultSchema,
   payment: paymentResultSchema,
   documentsChecklist: documentsChecklistResultSchema,
-  // Added STORY-042 — the Overview tab's Total Cost Summary panel needs
-  // the current decoration/photographer/bhatji values to prefill its three
-  // editable fields, the same "exposed the moment a UI story actually
-  // needs to read current state on first render" recurrence
-  // accommodation/payment/documentsChecklist/sessions each already went
-  // through.
-  extras: extrasResultSchema,
-  // Added STORY-068 alongside extras, same reasoning.
+  // Added STORY-068; since v2.2.0 (V1) the Total Cost Summary panel's line
+  // items editor reads and replaces this list — the only extras.
   extraLineItems: z.array(manualLineItemResultSchema),
   // Added STORY-072 — the Quotation's own Total Cost Summary needs the
   // rate actually stored on this Event, not always the 5% default, to
@@ -553,10 +532,9 @@ export const filteredEventResultSchema = eventResultSchema.extend({
   clientContacts: z.array(clientContactResultSchema).optional(),
   accommodation: filteredAccommodationResultSchema.optional(),
   payment: paymentResultSchema.optional(),
-  extras: extrasResultSchema.optional(),
   extraLineItems: z.array(manualLineItemResultSchema).optional(),
   // Hidden for every non-EventManager role, same "money-adjacent figure"
-  // class as extras/extraLineItems above (event-visibility.ts's own
+  // class as extraLineItems above (event-visibility.ts's own
   // filterEventForRole) — it only ever feeds the Quotation's own Total
   // Cost Summary, an EventManager-only screen.
   foodGstRatePercent: z.number().optional(),

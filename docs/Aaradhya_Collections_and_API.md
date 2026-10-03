@@ -253,7 +253,7 @@ SRS §4.10, implemented as its own collection per STORY-008 (see the note under 
 | DELETE | `/events/:id/sessions/:sid/items/:itemId` | Remove an Item | STORY-032 |
 | GET | `/calendar` | Sessions active on any date in a given month (`?month=&year=`), overlap-rule query; each session's `event` summary carries a server-computed `displayName` (POC → first client contact → family type, decision D7) so tiles are labelled for every role without exposing `client_contacts` | STORY-034, DEV-05 |
 | GET | `/events/search` | Date-range + status/venue/manager/type filtered Event search, overlap-rule query | STORY-036 |
-| PATCH | `/events/:id/extras` | Set the three optional extras (Decoration/Photographer/Bhatji amounts) | STORY-040 |
+| PUT | `/events/:id/extra-line-items` | Replace the Event's extra line items (name, optional note, amount) — the only extras since v2.2.0; replaces the removed `PATCH /events/:id/extras` (EventManager-only). One Change Log entry per call | STORY-040, DEV-20 |
 | GET | `/events/:id/quotation-summary` | Live Total Cost Summary rollup — not a stored entity. Accommodation is reported as `accommodationTaxable` (the Final Amount), `accommodationGst` (5%) and `accommodationTotal` (their sum) | STORY-041, DEV-07 |
 | GET | `/events/:id/quotation.pdf` | Generate and return the client-facing Quotation PDF | STORY-043 |
 | GET | `/dashboard` | Aggregate counts + upcoming-events list, role-filtered | STORY-047 |

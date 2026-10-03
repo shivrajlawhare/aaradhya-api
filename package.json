@@ -15,6 +15,7 @@
     "seed:admin": "tsx scripts/seed-admin.ts",
     "seed:config": "tsx scripts/seed-config.ts",
     "migrate:dev07": "tsx scripts/migrate-dev07.ts",
+    "migrate:v220": "tsx scripts/migrate-v220-extras.ts",
     "postinstall": "playwright install --with-deps chromium",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

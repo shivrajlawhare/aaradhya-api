@@ -14,7 +14,6 @@ import {
   type EventAttributes,
   type EventDocument,
   EventStatus,
-  type ExtrasAttributes,
   ItemType,
   type ManualLineItemAttributes,
   type PaymentAttributes,
@@ -52,7 +51,6 @@ type UpdateEventBody = ServerInferRequest<typeof contract.updateEvent>['body'];
 type UpdateEventAccommodationBody = ServerInferRequest<typeof contract.updateEventAccommodation>['body'];
 type UpdateEventPaymentBody = ServerInferRequest<typeof contract.updateEventPayment>['body'];
 type UpdateDocumentsChecklistBody = ServerInferRequest<typeof contract.updateDocumentsChecklist>['body'];
-type UpdateEventExtrasBody = ServerInferRequest<typeof contract.updateEventExtras>['body'];
 type CreateSessionResponse = ServerInferResponses<typeof contract.createSession>;
 type UpdateSessionResponse = ServerInferResponses<typeof contract.updateSession>;
 type UpdateSessionBody = ServerInferRequest<typeof contract.updateSession>['body'];
@@ -212,12 +210,6 @@ const toPublicPayment = (payment: PaymentAttributes) => ({
   balance: computeBalance(payment.totalEstimatedAmount, payment.advancePaid),
 });
 
-const toPublicExtras = (extras: ExtrasAttributes) => ({
-  decoration: extras.decoration,
-  photographer: extras.photographer,
-  bhatji: extras.bhatji,
-});
-
 const toPublicExtraLineItems = (items: ManualLineItemAttributes[]) =>
   items.map((item) => ({ name: item.name, note: item.note ?? null, amount: item.amount }));
 
@@ -317,7 +309,6 @@ export const toPublicEvent = (event: EventDocument) => ({
   accommodation: toPublicAccommodation(event.accommodation),
   payment: toPublicPayment(event.payment),
   documentsChecklist: toPublicDocumentsChecklist(event.documentsChecklist),
-  extras: toPublicExtras(event.extras),
   extraLineItems: toPublicExtraLineItems(event.extraLineItems),
   foodGstRatePercent: event.foodGstRatePercent,
   sessions: event.sessions.map(toPublicSession),
@@ -449,7 +440,6 @@ export const createEvent: AppRouteMutationImplementation<typeof contract.createE
         ...body.accommodation,
         roomLines: await snapshotRoomLineOccupancy(body.accommodation.roomLines ?? []),
       },
-      extras: body.extras,
       extraLineItems: body.extraLineItems ?? [],
       foodGstRatePercent: body.foodGstRatePercent,
       createdBy: req.user.id,
@@ -972,39 +962,12 @@ export const updateDocumentsChecklist: AppRouteMutationImplementation<
   return { status: 200, body: toPublicDocumentsChecklist(updated.documentsChecklist) };
 };
 
-// Three tracked fields, one Change Log Entry per changed field — same
-// granularity every other Event PATCH uses. Plain !== compares, the same
-// shape buildPaymentUpdate already uses for its own three money fields —
-// not a loop over a shared keys array (unlike buildDocumentsChecklistUpdate)
-// since three explicit ifs isn't more repetitive than building and
-// threading one would be.
-const buildExtrasUpdate = (
-  existing: EventDocument,
-  body: UpdateEventExtrasBody
-): { update: Record<string, unknown>; changes: PendingChange[] } => {
-  const current = existing.extras;
-  const update: Record<string, unknown> = {};
-  const changes: PendingChange[] = [];
-
-  if (body.decoration !== undefined && body.decoration !== current.decoration) {
-    update['extras.decoration'] = body.decoration;
-    changes.push({ field: 'decoration', oldValue: current.decoration, newValue: body.decoration });
-  }
-  if (body.photographer !== undefined && body.photographer !== current.photographer) {
-    update['extras.photographer'] = body.photographer;
-    changes.push({ field: 'photographer', oldValue: current.photographer, newValue: body.photographer });
-  }
-  if (body.bhatji !== undefined && body.bhatji !== current.bhatji) {
-    update['extras.bhatji'] = body.bhatji;
-    changes.push({ field: 'bhatji', oldValue: current.bhatji, newValue: body.bhatji });
-  }
-
-  return { update, changes };
-};
-
-// Same last-write-wins, no-locking stance every other Event PATCH already
-// documents — nothing here adds optimistic concurrency either.
-export const updateEventExtras: AppRouteMutationImplementation<typeof contract.updateEventExtras> = async ({
+// v2.2.0 (UI Redesign V1) — the extras are the line items, and the whole
+// list is replaced in one call (add / edit / remove on Event Detail all send
+// it). One Change Log Entry for the list (old → new arrays) with its own
+// groupId; an unchanged list writes nothing. Same last-write-wins stance as
+// every other Event write.
+export const updateExtraLineItems: AppRouteMutationImplementation<typeof contract.updateExtraLineItems> = async ({
   params,
   body,
   req,
@@ -1012,7 +975,7 @@ export const updateEventExtras: AppRouteMutationImplementation<typeof contract.u
   if (!req.user) {
     // Unreachable — eventManagerOnly (router.ts) runs authenticate before
     // this handler ever does; guarded instead of asserted past.
-    throw new Error('updateEventExtras handler ran without an authenticated user.');
+    throw new Error('updateExtraLineItems handler ran without an authenticated user.');
   }
   const changedByUserId = req.user.id;
 
@@ -1021,46 +984,38 @@ export const updateEventExtras: AppRouteMutationImplementation<typeof contract.u
     return eventNotFound;
   }
 
-  const { update, changes } = buildExtrasUpdate(existing, body);
-
-  if (changes.length === 0) {
-    return { status: 200, body: toPublicExtras(existing.extras) };
+  const oldValue = toPublicExtraLineItems(existing.extraLineItems);
+  const newValue = toPublicExtraLineItems(body.extraLineItems);
+  if (JSON.stringify(oldValue) === JSON.stringify(newValue)) {
+    return { status: 200, body: toPublicEvent(existing) };
   }
 
-  const updated = await Event.findByIdAndUpdate(params.id, update, {
-    returnDocument: 'after',
-    runValidators: true,
-  });
+  const updated = await Event.findByIdAndUpdate(
+    params.id,
+    { extraLineItems: body.extraLineItems },
+    { returnDocument: 'after', runValidators: true }
+  );
   if (!updated) {
     return eventNotFound;
   }
-  const eventId = updated.id;
 
-  // STORY-081 — one groupId per handler invocation (not per field), so the
-  // Activity tab can render every field this single PATCH touched as one
-  // grouped edit action instead of N unrelated rows.
-  const groupId = randomUUID();
-  await Promise.all(
-    changes.map((change) =>
-      logChange({
-        entityType: 'Event',
-        entityId: eventId,
-        field: change.field,
-        oldValue: change.oldValue,
-        newValue: change.newValue,
-        changedByUserId,
-        groupId,
-      })
-    )
-  );
+  await logChange({
+    entityType: 'Event',
+    entityId: updated.id,
+    field: 'extraLineItems',
+    oldValue,
+    newValue,
+    changedByUserId,
+    groupId: randomUUID(),
+  });
 
-  return { status: 200, body: toPublicExtras(updated.extras) };
+  return { status: 200, body: toPublicEvent(updated) };
 };
 
 // Recomputed from the Event's current live document on every call — no
 // separate stored "quotation" object exists (this story's own AC, per
 // Assumption A2), so there is nothing that could ever go stale between a
-// PATCH on sessions/accommodation/extras and the next call here.
+// write to sessions/accommodation/line items and the next call here.
 //
 // A Cancelled Session's venue cost and items are excluded from the rollup:
 // the SRS itself is silent on this (FR-QUO-2 says "per-Session"/"across
@@ -1093,12 +1048,8 @@ const computeEventQuotationSummary = (event: EventDocument) =>
       billedNights(event.accommodation),
       event.accommodation?.discountPercent ?? 0
     ).finalAmount,
-    extras: {
-      decoration: event.extras.decoration,
-      photographer: event.extras.photographer,
-      bhatji: event.extras.bhatji,
-      extraLineItems: event.extraLineItems,
-    },
+    // V1: line items only — the legacy fixed extras are never counted.
+    extraLineItems: event.extraLineItems,
     // STORY-072 — the rate actually stored on THIS Event, not always the
     // FOOD_GST_RATE_PERCENT default, so this rollup and the Quotation's own
     // Total Cost Summary compute the identical Food Cost with GST.

@@ -27,7 +27,7 @@ describe('computeTotalCostSummary', () => {
         },
       ],
       accommodationFinalAmount: 105840,
-      extras: { extraLineItems: [{ amount: 150000 }, { amount: 30000 }, { amount: 7000 }] },
+      extraLineItems: [{ amount: 150000 }, { amount: 30000 }, { amount: 7000 }],
       gstRatePercent: 5,
     });
 
@@ -73,7 +73,7 @@ describe('computeTotalCostSummary', () => {
     const summary = computeTotalCostSummary({
       sessions: fixtureSessions,
       accommodationFinalAmount: 11800,
-      extras: { decoration: 1000, photographer: 1500, bhatji: 500 },
+      extraLineItems: [{ amount: 1000 }, { amount: 1500 }, { amount: 500 }],
       gstRatePercent: 18,
     });
 
@@ -93,7 +93,7 @@ describe('computeTotalCostSummary', () => {
     const summary = computeTotalCostSummary({
       sessions: fixtureSessions,
       accommodationFinalAmount: 11800,
-      extras: { decoration: 1000, photographer: 1500, bhatji: 500 },
+      extraLineItems: [{ amount: 1000 }, { amount: 1500 }, { amount: 500 }],
       gstRatePercent: 18,
     });
 
@@ -139,7 +139,7 @@ describe('computeTotalCostSummary', () => {
     const summary = computeTotalCostSummary({
       sessions: fixtureSessions,
       accommodationFinalAmount: 11800,
-      extras: { decoration: 1000, photographer: 1500, bhatji: 500 },
+      extraLineItems: [{ amount: 1000 }, { amount: 1500 }, { amount: 500 }],
       gstRatePercent: 0,
     });
 
@@ -167,21 +167,19 @@ describe('computeTotalCostSummary', () => {
     expect(summary.foodSubtotal).toBe(500);
   });
 
-  it('sums extraLineItems into extrasTotal alongside decoration/photographer/bhatji (FR-QUO-9a)', () => {
+  it('sums the extra line items into extrasTotal — the only extras since v2.2.0 (FR-QUO-9a, V1)', () => {
     const summary = computeTotalCostSummary({
       sessions: [],
-      extras: {
-        decoration: 1000,
-        extraLineItems: [{ amount: 25000 }, { amount: 8000 }],
-      },
+      extraLineItems: [{ amount: 1000 }, { amount: 25000 }, { amount: 8000 }],
     });
 
     expect(summary.extrasTotal).toBe(34000);
+    expect(summary.grandTotal).toBe(34000);
   });
 
   it('treats a missing extraLineItems as contributing 0, not an error', () => {
-    const summary = computeTotalCostSummary({ sessions: [], extras: { decoration: 1000 } });
+    const summary = computeTotalCostSummary({ sessions: [] });
 
-    expect(summary.extrasTotal).toBe(1000);
+    expect(summary.extrasTotal).toBe(0);
   });
 });

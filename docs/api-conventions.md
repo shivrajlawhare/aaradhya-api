@@ -235,7 +235,9 @@ request shape, not which credential was wrong.
   Cost Summary panel needs to read current `decoration`/`photographer`/
   `bhatji` values to prefill its three editable fields; STORY-040 only
   added the PATCH). Reuses STORY-040's own `toPublicExtras`, so the shape
-  is identical to that PATCH endpoint's response body.
+  is identical to that PATCH endpoint's response body. **Superseded in
+  v2.2.0 (DEV-20):** `extras` is no longer part of any response — see
+  "PUT /events/:id/extra-line-items" below.
 - **`GET /events/:id`'s response shape now depends on `req.user.role`, as
   of STORY-046** — this is the gap this section's own second bullet named
   from the very start ("Module 5.5... is where this actually gets
@@ -245,7 +247,7 @@ request shape, not which credential was wrong.
   new, separate `filteredEventResultSchema` (built via `.extend()` on
   `eventResultSchema` and its nested schemas, every role-conditional field
   turned `.optional()`). `EventManager` sees everything unchanged; every
-  other role gets `payment`/`extras`/session `venueCost`/Item
+  other role gets `payment`/`extraLineItems`/session `venueCost`/Item
   `costPerPlate`+`totalCost`/room-line `tariff`+`totalTaxable`/
   accommodation `totalCharges` genuinely absent from the response (not
   present-but-null) — see `src/services/event-visibility.ts` for the full
@@ -377,40 +379,32 @@ request shape, not which credential was wrong.
   for `accommodation` (STORY-020) and `payment` (STORY-023); see the
   `GET /events, GET /events/:id` section above.
 
-### PATCH /events/:id/extras — SETTLED (STORY-040)
+### PUT /events/:id/extra-line-items — SETTLED (DEV-20, v2.2.0)
 
-- Gated by `requireRole(Role.EventManager)`, same as the other write routes
-  on Event.
-- Three fixed keys (`decoration`, `photographer`, `bhatji`), each an
-  optional non-negative number — a caller sends only what changed. The
-  body schema is `.strict()`, reusing `PATCH /events/:id/documents`'
-  precedent rather than payment's default-strip behavior: any key outside
-  this fixed three is a `400 VALIDATION_ERROR` (this story's own AC framed
-  it as "pick one, document it" — `.strict()` was chosen since extras is
-  the same kind of small, closed, non-extensible field set the documents
-  checklist already is, unlike payment's more open-ended field list).
-- Each amount is a plain numeric value — no computation applied to it
-  (STORY-039's `computeTotalCostSummary` is the only place these three
-  feed into a derived total, never this endpoint).
-- All three reject a negative value as `400 VALIDATION_ERROR` — "money in
-  can't be negative," the same convention `PATCH /events/:id/payment`
-  already established.
-- Response is the extras sub-object itself, not the parent Event — same
-  sub-resource-route convention `accommodation`/`payment`/`documents`
-  already established.
-- A brand-new Event reads all three as `0` — never `null`, never an
-  error — same "always instantiated with defaulted fields" shape
-  `payment`/`documentsChecklist` already use (not `accommodation`'s "may
-  be entirely absent" shape).
-- Each changed field writes its own Change Log Entry — same "one entry
-  per changed field" granularity every other Event PATCH uses.
-- Not yet exposed on `GET /events/:id` — this story has no UI need to read
-  it back yet (its own "UI: None" line); a future story will add
-  `extras: extrasResultSchema` to `eventResultSchema` the same way
-  `accommodation`/`payment`/`documentsChecklist`/`sessions` each were,
-  once a UI story actually needs to read the current state on first
-  render (see the `GET /events, GET /events/:id` section above for that
-  recurring pattern).
+Replaces `PATCH /events/:id/extras` (STORY-040), which is **removed**
+(route, controller and contract). UI Redesign decision V1: the extras are
+the manual line items (`extraLineItems`, FR-QUO-9a) only.
+
+- Gated by `eventManagerOnly`, same as the other write routes on Event.
+- Body `{ extraLineItems: [{ name, note?, amount }] }` replaces the whole
+  list (add / edit / remove on Event Detail all send it). Each item uses
+  the create-time schema: `name` trimmed and non-empty, `note` optional
+  (non-empty when sent), `amount` a non-negative number. The body is
+  `.strict()` — an unknown key (e.g. a legacy `decoration`) is a
+  `400 VALIDATION_ERROR`. An empty list clears every line item.
+- Response is the updated Event (`eventResultSchema`, via `toPublicEvent`),
+  so the client can refresh the panel and the Summary Strip from one call.
+- One Change Log Entry, field `extraLineItems`, with the old and new lists
+  (as returned: `note` is `null` when absent) and its own `groupId`. An
+  unchanged list writes nothing and returns the Event as is.
+- **Legacy `extras` (decoration / photographer / bhatji):** kept in the
+  Mongoose model for one release, read-only and unused, so the one-off
+  `npm run migrate:v220` migration can turn every non-zero amount into a
+  line item of that name and zero the field. It is no longer accepted on
+  `POST /events`, no longer returned on any Event response, and no longer
+  counted by `computeTotalCostSummary` — `extrasTotal` and the Grand Total
+  sum the line items only. Drop the field from the model in the release
+  after v2.2.0, once every environment has run the migration.
 
 ### GET /events/:id/quotation-summary — SETTLED (STORY-041)
 
@@ -422,7 +416,7 @@ request shape, not which credential was wrong.
   `src/services/quotation.ts`'s `computeTotalCostSummary` (STORY-039) is
   given a freshly built input every time, so there is no separate stored
   "quotation" object that could ever go stale (Assumption A2). Editing a
-  Session's `venue_cost`, its Items, the Accommodation Block, or extras and
+  Session's `venue_cost`, its Items, the Accommodation Block, or the extra line items and
   calling this endpoint again always reflects the change immediately.
 - **A Cancelled Session's venue cost and item costs are excluded from the
   rollup.** This is not settled by the SRS (§5.4/FR-QUO-2 says

@@ -21,8 +21,8 @@ import {
   updateDocumentsChecklist,
   updateEvent,
   updateEventAccommodation,
-  updateEventExtras,
   updateEventPayment,
+  updateExtraLineItems,
   updateItem,
   updateSession,
 } from './controllers/events.js';
@@ -105,9 +105,9 @@ export const router = server.router(contract, {
     middleware: eventManagerOnly,
     handler: updateDocumentsChecklist,
   },
-  updateEventExtras: {
+  updateExtraLineItems: {
     middleware: eventManagerOnly,
-    handler: updateEventExtras,
+    handler: updateExtraLineItems,
   },
   getQuotationSummary: {
     middleware: authenticatedOnly,

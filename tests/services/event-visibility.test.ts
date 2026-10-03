@@ -34,7 +34,6 @@ const fixtureEvent: VisibilityEvent = {
     passportPhotos: false,
     weddingCard: false,
   },
-  extras: { decoration: 1000, photographer: 0, bhatji: 0 },
   extraLineItems: [{ name: 'Photographer', note: 'wedding', amount: 25000 }],
   foodGstRatePercent: 5,
   sessions: [
@@ -149,7 +148,6 @@ describe('filterEventForRole', () => {
 
     it('genuinely omits payment, extras, extraLineItems, foodGstRatePercent, venueCost, and Item money fields', () => {
       expect(result.payment).toBeUndefined();
-      expect(result.extras).toBeUndefined();
       expect(result.extraLineItems).toBeUndefined();
       expect(result.foodGstRatePercent).toBeUndefined();
       expect(result.sessions[0]!.venueCost).toBeUndefined();
@@ -184,7 +182,6 @@ describe('filterEventForRole', () => {
 
     it('genuinely omits payment, extras, and every money figure including room tariffs', () => {
       expect(result.payment).toBeUndefined();
-      expect(result.extras).toBeUndefined();
       expect(result.sessions[0]!.venueCost).toBeUndefined();
       expect(result.accommodation!.totalCharges).toBeUndefined();
       expect(result.accommodation!.roomLines[0]!.tariff).toBeUndefined();
@@ -213,7 +210,6 @@ describe('filterEventForRole', () => {
 
     it('genuinely omits payment, extras, and every money figure including room tariffs', () => {
       expect(result.payment).toBeUndefined();
-      expect(result.extras).toBeUndefined();
       expect(result.sessions[0]!.venueCost).toBeUndefined();
       expect(result.accommodation!.totalCharges).toBeUndefined();
       expect(result.accommodation!.roomLines[0]!.tariff).toBeUndefined();

@@ -25,29 +25,16 @@ export interface QuotationSessionInput {
   items: QuotationItemInput[];
 }
 
-// The three named optional line items (SRS §5.4 FR-QUO-2) — not yet a real
-// Event field (STORY-040 adds the PATCH endpoint that will write these),
-// so this function accepts them as plain input rather than reaching into
-// EventAttributes. Each is optional/defaults to 0: a brand-new Event with
-// none of the three set yet (STORY-041's own edge case) still produces a
-// valid all-zero summary, not an error.
-export interface QuotationExtrasInput {
-  decoration?: number;
-  photographer?: number;
-  bhatji?: number;
-  // SRS FR-QUO-9a / A13 — the open-ended manual line items list, additive
-  // alongside decoration/photographer/bhatji (both feed the same
-  // extrasTotal below), not a replacement.
-  extraLineItems?: { amount: number }[];
-}
-
 export interface TotalCostSummaryInput {
   sessions: QuotationSessionInput[];
   // Accommodation's Final Amount (services/accommodation.ts: Total Charges
   // less the discount) — taxable, pre-GST. DEV-07 (D2): 5% GST is added here,
   // once, on the whole amount.
   accommodationFinalAmount?: number;
-  extras?: QuotationExtrasInput;
+  // SRS FR-QUO-9a / A13 — the manual line items. Since v2.2.0 (V1) these are
+  // the only extras: the legacy fixed decoration/photographer/bhatji were
+  // migrated into line items and are no longer counted.
+  extraLineItems?: { amount: number }[];
   gstRatePercent?: number;
 }
 
@@ -103,7 +90,7 @@ const sumFoodSubtotal = (sessions: QuotationSessionInput[]): number =>
 export const computeTotalCostSummary = ({
   sessions,
   accommodationFinalAmount = 0,
-  extras = {},
+  extraLineItems = [],
   gstRatePercent = FOOD_GST_RATE_PERCENT,
 }: TotalCostSummaryInput): TotalCostSummary => {
   const venueTotal = sumVenueCosts(sessions);
@@ -115,10 +102,7 @@ export const computeTotalCostSummary = ({
   const accommodationTaxable = roundToCurrency(accommodationFinalAmount);
   const accommodationGst = computeAccommodationGst(accommodationTaxable);
   const accommodationTotal = roundToCurrency(accommodationTaxable + accommodationGst);
-  const extraLineItemsTotal = (extras.extraLineItems ?? []).reduce((total, item) => total + item.amount, 0);
-  const extrasTotal = roundToCurrency(
-    (extras.decoration ?? 0) + (extras.photographer ?? 0) + (extras.bhatji ?? 0) + extraLineItemsTotal
-  );
+  const extrasTotal = roundToCurrency(extraLineItems.reduce((total, item) => total + item.amount, 0));
   const grandTotal = roundToCurrency(venueTotal + foodTotalInclGst + accommodationTotal + extrasTotal);
 
   return {
